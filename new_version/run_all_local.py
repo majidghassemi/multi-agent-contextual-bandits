@@ -55,7 +55,7 @@ warnings.filterwarnings('ignore')
 # CONFIGURATION
 # ============================================================================
 OUTDIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
-FAST = os.environ.get('CEC_FAST', '0') == '0'   # set CEC_FAST=1 for a smoke test
+FAST = os.environ.get('CEC_FAST', '0') == '1'   # set CEC_FAST=1 for a smoke test
 
 N_SEEDS  = 8     if FAST else 30
 T_EXP12  = 4000  if FAST else 20000

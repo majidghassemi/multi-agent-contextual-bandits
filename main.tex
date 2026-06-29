@@ -1,0 +1,2146 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amsthm,amssymb,mathtools}
+\usepackage{bm}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{geometry}
+\usepackage{enumerate}
+\geometry{margin=1in}
+
+%% Theorem environments
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{assumption}[theorem]{Assumption}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\newtheorem*{remark}{Remark}
+\newtheorem*{example}{Example}
+
+\DeclareMathOperator*{\argmax}{arg\,max}
+
+\title{Coupled Exploration Collapse in Cooperative Contextual Bandits\\
+\large (Corrected Version)}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+%%============================================================
+\section{Setting and Notation}\label{sec:setting}
+%%============================================================
+
+\paragraph{Communication graph.}
+Let $G=(V,E)$ be a connected undirected graph with $N=|V|$ agents.
+We associate to $G$ a symmetric doubly stochastic gossip matrix
+$W\in\mathbb{R}^{N\times N}$ with $W_{ij}=0$ whenever $i\neq j$
+and $(i,j)\notin E$.  The eigenvalues of $W$ are ordered as
+$1=\lambda_1(W)>\lambda_2(W)\geq\cdots\geq\lambda_N(W)\geq -1$,
+and we write $\gamma(W)\coloneqq 1-\lambda_2(W)\in(0,1]$ for the
+spectral gap.  We also write
+$\lambda_*(W)\coloneqq\max(|\lambda_2(W)|,|\lambda_N(W)|)<1$
+for the second-largest eigenvalue \emph{in modulus}, which controls
+the geometric decay of $W^k$ towards the uniform average.
+The $\epsilon$-mixing time satisfies
+$T_{\mathrm{mix}}(W;\epsilon)\leq(1-\lambda_*(W))^{-1}\log(1/\epsilon)$.
+
+\begin{assumption}[Laziness / PSD gossip matrix]\label{ass:lazy}
+$W$ is positive semidefinite, equivalently $\lambda_N(W)\geq 0$ and
+hence $\lambda_*(W)=\lambda_2(W)$.  Any reversible $W$ can be made to
+satisfy this by the standard lazy substitution
+$W\mapsto\tfrac12(I+W)$, which preserves the stationary distribution
+and at most doubles the mixing time.
+\end{assumption}
+
+\begin{remark}[Non-PSD case]\label{rem:lazy}
+Assumption~\ref{ass:lazy} is used only to invoke per-step spectral
+estimates (Lemmas~\ref{lem:gossip}, \ref{lem:leakage},
+\ref{lem:prop}).  If $W$ is \emph{not} PSD (e.g.\ a Metropolis chain
+with a negative eigenvalue), every per-$k$ bound below remains valid
+after replacing $\lambda_2(W)^k$ by $\lambda_*(W)^k$, because
+the relevant quantities are $|[W^k]_{ij}-1/N|$ and
+$1-[W^k]_{ii}$, both of which are controlled by $\lambda_*$ rather
+than $\lambda_2$.  We state the lemmas with $\lambda_*$ for this
+reason. Under Assumption~\ref{ass:lazy} one may read
+$\lambda_*=\lambda_2$ throughout.
+\end{remark}
+
+\paragraph{Contextual social bandit.}
+At each round $t=1,\dots,T$, every agent $i\in V$ observes a context
+$\bm{x}_t^{(i)}\in\mathcal{X}\subset\mathbb{R}^d$ drawn i.i.d.\ from
+an agent-specific distribution $\mathcal{D}_i$ (marginal $\mu_i$ on
+$\mathcal{X}$, independent of history), selects an action
+$a_t^{(i)}\in\mathcal{A}$ via a history-measurable policy, and
+observes scalar feedback $y_t^{(i)}\in\mathbb{R}$.  For feature map
+$\phi:\mathcal{X}\times\mathcal{A}\to\mathbb{R}^d$ and unknown
+parameter $\bm{\theta}^{\!*}\in\mathbb{R}^d$, the model reads
+\begin{equation}
+y_t^{(i)}=\langle\phi(\bm{x}_t^{(i)},a_t^{(i)}),\bm{\theta}^{\!*}\rangle
++\beta^{(i)}\!\bigl(\bm{x}_t^{(i)},a_t^{(i)}\bigr)+\eta_t^{(i)},
+\label{eq:observation_model}
+\end{equation}
+where $\beta^{(i)}:\mathcal{X}\times\mathcal{A}\to\mathbb{R}$ is
+deterministic, agent-specific, bounded ($|\beta^{(i)}|\leq B_\beta$),
+and $\eta_t^{(i)}$ is zero-mean $\sigma$-sub-Gaussian noise,
+\emph{independent across $(t,i)$} conditional on
+$\mathcal{F}_{t-1}$.  We write
+$\bm{z}_t^{(i)}\coloneqq\phi(\bm{x}_t^{(i)},a_t^{(i)})$ and assume
+$\|\bm{z}_t^{(i)}\|\leq L$ and $\|\bm{\theta}^{\!*}\|\leq S$.
+Write $\pi^{\!*}(\bm{x})=\argmax_a\langle\phi(\bm{x},a),\bm{\theta}^{\!*}\rangle$
+for the ground-truth optimal policy and measure performance via the
+\emph{latent network regret}
+\begin{equation}
+R_T^{\mathrm{net}}\coloneqq\sum_{t=1}^T\sum_{i=1}^N
+\Bigl[\langle\phi(\bm{x}_t^{(i)},\pi^{\!*}(\bm{x}_t^{(i)})),\bm{\theta}^{\!*}\rangle
+-\langle\phi(\bm{x}_t^{(i)},a_t^{(i)}),\bm{\theta}^{\!*}\rangle\Bigr].
+\label{eq:latent_regret}
+\end{equation}
+
+%%============================================================
+\section{Context-Overlap and the Self-Consistent Bias Fixed Point}
+\label{sec:overlap}
+%%============================================================
+
+\subsection{Policy-Dependent Bias Vector}
+
+Fix $\bm{\theta}\in\mathbb{R}^d$ and define the greedy policy
+$\pi_{\bm{\theta}}(\bm{x})\coloneqq\argmax_{a\in\mathcal{A}}
+\langle\phi(\bm{x},a),\bm{\theta}\rangle$
+with ties broken by a fixed measurable rule.  Let
+\begin{align}
+\bm{u}_i(\bm{\theta})&\coloneqq
+\mathbb{E}_{\bm{x}\sim\mu_i}\bigl[\beta^{(i)}(\bm{x},\pi_{\bm{\theta}}(\bm{x}))\,
+\phi(\bm{x},\pi_{\bm{\theta}}(\bm{x}))\bigr],\quad
+\bar{\bm{u}}(\bm{\theta})\coloneqq\tfrac{1}{N}\sum_{i=1}^N\bm{u}_i(\bm{\theta}),
+\label{eq:u_policy}\\
+\Sigma_z^{(i)}(\bm{\theta})&\coloneqq
+\mathbb{E}_{\bm{x}\sim\mu_i}\bigl[\phi(\bm{x},\pi_{\bm{\theta}}(\bm{x}))
+\phi(\bm{x},\pi_{\bm{\theta}}(\bm{x}))^\top\bigr],\quad
+\bar{\Sigma}_z(\bm{\theta})\coloneqq\tfrac{1}{N}\sum_{i=1}^N\Sigma_z^{(i)}(\bm{\theta}).
+\label{eq:Sigma_policy}
+\end{align}
+
+\begin{definition}[Self-consistency map]\label{def:F}
+Define $F:\mathbb{R}^d\to\mathbb{R}^d$ by
+\[
+F(\bm{\theta})\coloneqq\bm{\theta}^{\!*}+\bar{\Sigma}_z(\bm{\theta})^{-1}\bar{\bm{u}}(\bm{\theta}),
+\qquad\text{wherever }\bar{\Sigma}_z(\bm{\theta})\succ 0.
+\]
+A \emph{biased fixed point} is any $\bm{\theta}_\infty$ satisfying
+$F(\bm{\theta}_\infty)=\bm{\theta}_\infty$. Equivalently,
+$\bm{\delta}\coloneqq\bm{\theta}_\infty-\bm{\theta}^{\!*}$ solves
+$\bar{\Sigma}_z(\bm{\theta}^{\!*}+\bm{\delta})\,\bm{\delta}
+=\bar{\bm{u}}(\bm{\theta}^{\!*}+\bm{\delta})$.
+\end{definition}
+
+\subsection{Existence of a Biased Fixed Point}
+
+\begin{assumption}[Regularity]\label{ass:reg}
+(a)~Each marginal $\mu_i$ has a density with respect to Lebesgue
+measure on $\mathcal{X}$.
+(b)~There exist constants $R>0$ and $\sigma_{\min}>0$ such that
+$\bar{\Sigma}_z(\bm{\theta})\succeq\sigma_{\min}I$ for all
+$\bm{\theta}\in B_R\coloneqq\{\bm{\theta}:\|\bm{\theta}-\bm{\theta}^{\!*}\|\leq R\}$.
+(c)~$\sigma_{\min}^{-1}\sup_{\bm{\theta}\in B_R}\|\bar{\bm{u}}(\bm{\theta})\|\leq R$
+(self-mapping), which holds whenever $B_\beta L/\sigma_{\min}\leq R$.
+\end{assumption}
+
+\begin{assumption}[Margin / low-noise regularity]\label{ass:margin}
+There is a constant $C_{\mathrm{mar}}<\infty$ such that for every pair
+of actions $a\neq a'$, every $\bm{\theta}\in B_R$, and every $\zeta\geq 0$,
+the $\mu_i$-mass of contexts whose decision margin is at most $\zeta$
+is controlled,
+\[
+\mu_i\bigl(\{\bm{x}:\,
+0<|\langle\phi(\bm{x},a)-\phi(\bm{x},a'),\bm{\theta}\rangle|\leq\zeta\}\bigr)
+\leq C_{\mathrm{mar}}\,\zeta
+\qquad(\forall i).
+\]
+\end{assumption}
+
+\begin{remark}[Consequence, Lipschitz population maps]\label{rem:lip}
+Assumption~\ref{ass:margin} is a Tsybakov-type low-noise/margin
+condition.  Although the greedy selector $\pi_{\bm{\theta}}$ is a
+\emph{discontinuous} function of $\bm{\theta}$, the condition forces
+the $\mu_i$-mass of contexts that \emph{change} their selected action
+when $\bm{\theta}$ moves by $\Delta\bm{\theta}$ to be
+$O(C_{\mathrm{mar}}\cdot 2L\|\Delta\bm{\theta}\|)$ (a margin of size
+$\leq 2L\|\Delta\bm{\theta}\|$ is needed to flip an action).  Since
+the integrands defining $\bm{u}_i,\Sigma_z^{(i)}$ in
+\eqref{eq:u_policy} and \eqref{eq:Sigma_policy} are bounded by $B_\beta L$
+and $L^2$ respectively, the maps
+$\bm{\theta}\mapsto\bar{\bm{u}}(\bm{\theta})$ and
+$\bm{\theta}\mapsto\bar{\Sigma}_z(\bm{\theta})$ are Lipschitz on $B_R$,
+with constants
+\[
+L_u\leq 2C_{\mathrm{mar}}B_\beta L^2,\qquad
+L_\Sigma\leq 2C_{\mathrm{mar}}L^3.
+\]
+We invoke this in Lemma~\ref{lem:bias} (Step~4) and in
+Lemma~\ref{lem:contraction}.  Without
+Assumption~\ref{ass:margin} these maps can be discontinuous and the
+fixed-point/perturbation arguments break down.
+\end{remark}
+
+For each $\bm{\theta}\in B_R$, let $\Pi(\bm{\theta})$ denote the set of
+measurable policies $\pi:\mathcal{X}\to\mathcal{A}$ such that
+$\pi(\bm{x})\in\argmax_a\langle\phi(\bm{x},a),\bm{\theta}\rangle$
+for every $\bm{x}$.  For $\pi\in\Pi(\bm{\theta})$, define
+\begin{align*}
+\bar{\bm{u}}_\pi(\bm{\theta})&\coloneqq
+\tfrac{1}{N}\sum_i\mathbb{E}_{\bm{x}\sim\mu_i}
+\bigl[\beta^{(i)}(\bm{x},\pi(\bm{x}))\phi(\bm{x},\pi(\bm{x}))\bigr],\\
+\bar{\Sigma}_{z,\pi}(\bm{\theta})&\coloneqq
+\tfrac{1}{N}\sum_i\mathbb{E}_{\bm{x}\sim\mu_i}
+\bigl[\phi(\bm{x},\pi(\bm{x}))\phi(\bm{x},\pi(\bm{x}))^\top\bigr].
+\end{align*}
+
+\begin{definition}[Set-valued self-consistency map]\label{def:Phi}
+Define $\Phi:B_R\rightrightarrows B_R$ by
+\[
+\Phi(\bm{\theta})\coloneqq
+\overline{\mathrm{co}}\,\bigl\{
+\bm{\theta}^{\!*}+\bar{\Sigma}_{z,\pi}(\bm{\theta})^{-1}
+\bar{\bm{u}}_\pi(\bm{\theta}):\pi\in\Pi(\bm{\theta})\bigr\},
+\]
+where $\overline{\mathrm{co}}$ denotes the closed convex hull.
+\end{definition}
+
+\begin{lemma}[Existence of biased fixed point]\label{lem:fp}
+Under Assumption~\ref{ass:reg}, the set-valued map $\Phi$ has a fixed
+point. That is, there exists $\bm{\theta}_\infty\in B_R$ with
+$\bm{\theta}_\infty\in\Phi(\bm{\theta}_\infty)$.
+Equivalently, there exist $\bm{\theta}_\infty\in B_R$ and a
+\emph{convex combination} of policies in $\Pi(\bm{\theta}_\infty)$
+(coefficients $\alpha_k\geq 0$, $\sum_k\alpha_k=1$, and
+selectors $\pi_k\in\Pi(\bm{\theta}_\infty)$) such that
+\begin{equation}
+\bm{\theta}_\infty=\bm{\theta}^{\!*}+
+\sum_k\alpha_k\,\bar{\Sigma}_{z,\pi_k}(\bm{\theta}_\infty)^{-1}
+\bar{\bm{u}}_{\pi_k}(\bm{\theta}_\infty).
+\label{eq:fp_conv}
+\end{equation}
+We write $\bm{\delta}\coloneqq\bm{\theta}_\infty-\bm{\theta}^{\!*}$.
+\end{lemma}
+
+\begin{proof}
+We verify Kakutani's hypotheses for $\Phi:B_R\rightrightarrows B_R$.
+
+\emph{(i) Nonemptiness and convexity of values.}  By the
+Kuratowski--Ryll-Nardzewski measurable selection theorem,
+$\Pi(\bm{\theta})\neq\emptyset$.
+Assumption~\ref{ass:reg}(b) guarantees
+$\bar{\Sigma}_{z,\pi}(\bm{\theta})\succeq\sigma_{\min}I$
+for any $\pi\in\Pi(\bm{\theta})$, so inversion is well-defined.
+Hence $\Phi(\bm{\theta})$ is nonempty. Closed convex hulls are
+nonempty, closed, and convex by construction.
+
+\emph{(ii) Self-mapping.}  For any $\pi\in\Pi(\bm{\theta})$ and
+$\bm{\theta}\in B_R$,
+$\|\bar{\Sigma}_{z,\pi}(\bm{\theta})^{-1}\bar{\bm{u}}_\pi(\bm{\theta})\|
+\leq\sigma_{\min}^{-1}B_\beta L\leq R$
+by Assumption~\ref{ass:reg}(c).
+Convex combinations of points in $B_R$ lie in $B_R$, so $\Phi:B_R\to B_R$.
+
+\emph{(iii) Closed graph (upper hemicontinuity).}  Suppose
+$\bm{\theta}_n\to\bm{\theta}$ in $B_R$, $\bm{y}_n\in\Phi(\bm{\theta}_n)$,
+and $\bm{y}_n\to\bm{y}$.  We argue closedness of the graph of $\Phi$
+directly, avoiding any (meaningless) ``almost-every sequence''
+statement. The limiting point $\bm{\theta}$ is \emph{given}, not free
+to be perturbed.
+
+First, the value correspondence
+$\bm{\theta}\mapsto\Pi(\bm{\theta})=\{\pi:\pi(\bm{x})\in
+\argmax_a\langle\phi(\bm{x},a),\bm{\theta}\rangle\ \mu_i\text{-a.e.}\}$
+is the (pointwise) argmax of the jointly continuous map
+$(\bm{x},a,\bm{\theta})\mapsto\langle\phi(\bm{x},a),\bm{\theta}\rangle$
+over the compact action set $\mathcal{A}$.  By Berge's maximum theorem
+(see Aliprantis--Border, \emph{Infinite Dimensional Analysis},
+Thm.~17.31), the pointwise argmax correspondence
+$\bm{x}\rightrightarrows\argmax_a\langle\phi(\bm{x},a),\bm{\theta}\rangle$
+is nonempty, compact-valued and \emph{upper hemicontinuous} in
+$\bm{\theta}$, and admits a measurable selection by the
+Kuratowski--Ryll-Nardzewski theorem (Aliprantis--Border,
+Thm.~18.13).  This is what guarantees $\Pi(\bm{\theta})\neq\emptyset$ in
+step~(i).
+
+Second, we establish continuity of the integral functionals at the
+given limit point $\bm{\theta}$.  Fix the selectors $\pi_n$ realizing
+$\bm{y}_n$.  Decompose
+$\mathcal{X}=\mathcal{X}^{\mathrm{tie}}_{\bm{\theta}}\cup
+(\mathcal{X}\setminus\mathcal{X}^{\mathrm{tie}}_{\bm{\theta}})$, where
+$\mathcal{X}^{\mathrm{tie}}_{\bm{\theta}}=\{\bm{x}:
+\arg\max_a\langle\phi(\bm{x},a),\bm{\theta}\rangle
+\text{ is not a singleton}\}$.
+By Assumption~\ref{ass:margin} (with $\zeta\downarrow 0$),
+$\mu_i(\mathcal{X}^{\mathrm{tie}}_{\bm{\theta}})=0$ for the given
+$\bm{\theta}$ \emph{and every} $i$. This is precisely the role of
+the margin condition, which removes the need for any ``generic
+$\bm{\theta}$'' caveat.  On the complement, the argmax is unique and,
+by upper hemicontinuity, locally constant along
+$\bm{\theta}_n\to\bm{\theta}$, and hence
+$\beta^{(i)}(\bm{x},\pi_n(\bm{x}))\phi(\bm{x},\pi_n(\bm{x}))\to
+\beta^{(i)}(\bm{x},\pi(\bm{x}))\phi(\bm{x},\pi(\bm{x}))$ pointwise for
+$\mu_i$-a.e.\ $\bm{x}$, with $\pi(\bm{x})\in\argmax_a\langle\phi(\bm{x},a),
+\bm{\theta}\rangle$.  The integrands are bounded ($\leq B_\beta L$ and
+$\leq L^2$), so dominated convergence gives
+$\bar{\bm{u}}_{\pi_n}(\bm{\theta}_n)\to\bar{\bm{u}}_\pi(\bm{\theta})$
+and
+$\bar{\Sigma}_{z,\pi_n}(\bm{\theta}_n)\to\bar{\Sigma}_{z,\pi}(\bm{\theta})$
+with $\pi\in\Pi(\bm{\theta})$.
+Continuity of matrix inversion on the positive-definite cone
+(ensured by the $\sigma_{\min}I$ lower bound) then gives
+convergence of the corresponding fixed-point candidates.
+Since $\Phi(\bm{\theta})$ is the closed convex hull of such limits,
+$\bm{y}\in\Phi(\bm{\theta})$, establishing the closed graph.
+
+By Kakutani's theorem applied to the nonempty compact convex set $B_R$,
+there exists $\bm{\theta}_\infty\in\Phi(\bm{\theta}_\infty)$.
+Unpacking Definition~\ref{def:Phi}, $\bm{\theta}_\infty$ equals a
+\emph{finite convex combination} of elements of the form
+$\bm{\theta}^{\!*}+\bar{\Sigma}_{z,\pi_k}(\bm{\theta}_\infty)^{-1}
+\bar{\bm{u}}_{\pi_k}(\bm{\theta}_\infty)$
+for $\pi_k\in\Pi(\bm{\theta}_\infty)$,
+which is the representation~\eqref{eq:fp_conv}.
+
+\emph{Remark on representation.}
+We do \emph{not} claim that the convex combination in~\eqref{eq:fp_conv}
+reduces to a single term, because the map
+$\pi\mapsto\bar{\Sigma}_{z,\pi}^{-1}\bar{\bm{u}}_\pi$ is nonlinear
+(the matrix inverse is involved).  The representation as a convex
+combination of selectors in $\Pi(\bm{\theta}_\infty)$ is the correct
+and fully general form.  When the argmax is $\mu_i$-a.e.\ unique at
+$\bm{\theta}_\infty$, all selectors agree and the combination reduces
+to a single term.
+\end{proof}
+
+\begin{remark}[Non-uniqueness]\label{rem:nonunique}
+The fixed point need not be unique.  Our negative result
+(Theorem~\ref{thm:cec}) requires only that at least one
+$\bm{\delta}\neq\bm{0}$ exists.
+\end{remark}
+
+\begin{assumption}[Non-trivial emergent bias]\label{ass:bias}
+There exists a biased fixed point $\bm{\theta}_\infty\in B_R$ with
+emergent bias
+$\bm{\delta}=\bm{\theta}_\infty-\bm{\theta}^{\!*}$ satisfying
+\[
+\|\bm{\delta}\|_{\bar{\Sigma}_z(\bm{\theta}_\infty)}
+\geq\rho_0\cdot\frac{B_\beta}{\sqrt{\lambda_{\max}(\bar{\Sigma}_z(\bm{\theta}_\infty))}}
+\]
+for some $\rho_0\in(0,1]$.
+\end{assumption}
+
+
+%%============================================================
+\section{Naive Cooperative LinUCB and the Centralized Reference}
+\label{sec:naive}
+%%============================================================
+
+\subsection{The Algorithm}
+
+We analyze gossip-based cooperative LinUCB.  Each agent $i$ maintains
+sufficient statistics $(A_t^{(i)},\bm{b}_t^{(i)})$ and at each round
+performs a local update and then a gossip step,
+\begin{align*}
+\widetilde{A}_t^{(i)}&=A_{t-1}^{(i)}+\bm{z}_t^{(i)}\bm{z}_t^{(i)\top},&
+\widetilde{\bm{b}}_t^{(i)}&=\bm{b}_{t-1}^{(i)}+y_t^{(i)}\bm{z}_t^{(i)},\\
+A_t^{(i)}&=\sum_{j=1}^N W_{ij}\,\widetilde{A}_t^{(j)},&
+\bm{b}_t^{(i)}&=\sum_{j=1}^N W_{ij}\,\widetilde{\bm{b}}_t^{(j)},
+\end{align*}
+with $A_0^{(i)}=\lambda I$, $\bm{b}_0^{(i)}=\bm{0}$.
+The estimator is
+$\widehat{\bm{\theta}}_t^{(i)}=(A_t^{(i)})^{-1}\bm{b}_t^{(i)}$
+and the action is
+\[
+a_t^{(i)}=\argmax_a\Bigl[\langle\phi(\bm{x}_t^{(i)},a),
+\widehat{\bm{\theta}}_t^{(i)}\rangle
++\alpha_t\|\phi(\bm{x}_t^{(i)},a)\|_{(A_t^{(i)})^{-1}}\Bigr]
+\]
+with $\alpha_t=\sigma\sqrt{d\log\!\bigl(1+tL^2/(N\lambda)\bigr)+2\log(1/\delta)}
++\sqrt{\lambda}\,S$.
+
+\subsection{The Centralized Reference Estimator}
+
+\begin{definition}[Centralized reference]\label{def:cen}
+\[
+A_t^{\mathrm{cen}}\coloneqq\lambda I+\frac{1}{N}\sum_{\tau=1}^t\sum_{j=1}^N
+\bm{z}_\tau^{(j)}\bm{z}_\tau^{(j)\top},\quad
+\bm{b}_t^{\mathrm{cen}}\coloneqq\frac{1}{N}\sum_{\tau=1}^t\sum_{j=1}^N
+y_\tau^{(j)}\bm{z}_\tau^{(j)},\quad
+\bm{\theta}_t^{\mathrm{cen}}\coloneqq(A_t^{\mathrm{cen}})^{-1}\bm{b}_t^{\mathrm{cen}}.
+\]
+\end{definition}
+
+\begin{lemma}[Gossip error bound]\label{lem:gossip}
+Under the doubly-stochastic gossip iteration, for any agent $i$ and any $t\geq 1$,
+\begin{equation}
+\|A_t^{(i)}-A_t^{\mathrm{cen}}\|_{\mathrm{op}}
+\leq\frac{\sqrt{N-1}\,L^2}{1-\lambda_*(W)},\qquad
+\|\bm{b}_t^{(i)}-\bm{b}_t^{\mathrm{cen}}\|
+\leq\frac{\sqrt{N-1}\,B_y L}{1-\lambda_*(W)},
+\label{eq:gossip_err}
+\end{equation}
+where $B_y=SL+B_\beta+C\sigma\sqrt{\log(TN/\delta)}$
+with high probability (uniform in $t$).
+Under Assumption~\ref{ass:lazy} ($\lambda_*=\lambda_2$) the right-hand
+sides read $\sqrt{N-1}\,L^2/\gamma(W)$ and
+$\sqrt{N-1}\,B_y L/\gamma(W)$. In particular both scale as
+$\Theta(\sqrt{N}/\gamma(W))$.
+\end{lemma}
+
+\begin{remark}[The $\sqrt{N}$ factor]\label{rem:sqrtN}
+The cooperative-centralized gap grows like $\sqrt{N}$, not like a
+constant.  A $k$-step walk started at the point mass $\delta_i$ carries
+$\ell_1$ distance to uniform of order
+$\sqrt{1/\pi_{\min}}\,\lambda_*^k=\sqrt{N}\,\lambda_*^k$ for the uniform
+stationary law $\pi_{\min}=1/N$. The earlier constant $2\lambda_2^k$
+understated this by exactly $\sqrt{N}$.  This $\sqrt{N}$ propagates
+into $t^\star(G,\gamma)$ (Theorem~\ref{thm:cec}) and into term~(iii) of
+Theorem~\ref{thm:dcesa}.
+\end{remark}
+
+\begin{proof}
+\textbf{Unrolling the gossip recursion.}
+By induction on the update rule, one verifies that
+\[
+A_t^{(i)}=\lambda I+\sum_{\tau=1}^t\sum_{j=1}^N
+[W^{t-\tau+1}]_{ij}\,\bm{z}_\tau^{(j)}\bm{z}_\tau^{(j)\top},
+\]
+so that
+\[
+A_t^{(i)}-A_t^{\mathrm{cen}}
+=\sum_{\tau=1}^t\sum_{j=1}^N
+\Bigl([W^{t-\tau+1}]_{ij}-\tfrac{1}{N}\Bigr)
+\bm{z}_\tau^{(j)}\bm{z}_\tau^{(j)\top}.
+\]
+
+\textbf{Key spectral bound.}
+From the spectral decomposition of $W$,
+$[W^k]_{ij}-1/N=\sum_{l\geq 2}\lambda_l^k v_{l,i}v_{l,j}$.
+The sharp $\ell_1$ bound for a reversible chain started at the point
+mass $i$ towards its (here uniform) stationary law is
+\begin{equation}
+\sum_{j=1}^N\bigl|[W^k]_{ij}-\tfrac{1}{N}\bigr|
+=2\,\mathrm{TV}\!\bigl(W_i^{(k)},\mathrm{Uniform}\bigr)
+\leq\sqrt{\frac{1-\pi_i}{\pi_i}}\;\lambda_*(W)^k
+=\sqrt{N-1}\;\lambda_*(W)^k,
+\label{eq:tv_bound}
+\end{equation}
+using $\pi_i=1/N$ and the standard spectral bound
+$\mathrm{TV}\leq\tfrac12\sqrt{(1-\pi_i)/\pi_i}\,\lambda_*^k$ (e.g.\
+Levin--Peres, \emph{Markov Chains and Mixing Times}, Prop.~12.19).
+The modulus eigenvalue $\lambda_*=\max(|\lambda_2|,|\lambda_N|)$ is
+required because, for non-PSD $W$, a negative $\lambda_N$ can dominate
+at even/odd $k$. Under Assumption~\ref{ass:lazy}, $\lambda_*=\lambda_2$.
+The naive estimate $2\lambda_2^k$ omits the
+$\sqrt{(1-\pi_i)/\pi_i}=\sqrt{N-1}$ factor carried by the point-mass
+start (Remark~\ref{rem:sqrtN}).
+
+\textbf{Operator-norm bound via triangle inequality.}
+For each fixed $\tau$ (with $k=t-\tau+1$), applying the triangle
+inequality and~\eqref{eq:tv_bound} gives
+\begin{align*}
+\Bigl\|\sum_{j}\bigl([W^k]_{ij}-\tfrac{1}{N}\bigr)
+\bm{z}_\tau^{(j)}\bm{z}_\tau^{(j)\top}\Bigr\|_{\mathrm{op}}
+&\leq\sum_{j}\bigl|[W^k]_{ij}-\tfrac{1}{N}\bigr|\cdot
+\|\bm{z}_\tau^{(j)}\bm{z}_\tau^{(j)\top}\|_{\mathrm{op}}\\
+&\leq L^2\sum_{j}\bigl|[W^k]_{ij}-\tfrac{1}{N}\bigr|
+\leq\sqrt{N-1}\,\lambda_*(W)^k L^2.
+\end{align*}
+Summing over $\tau=1,\dots,t$,
+\[
+\|A_t^{(i)}-A_t^{\mathrm{cen}}\|_{\mathrm{op}}
+\leq\sqrt{N-1}\,L^2\sum_{k=1}^t\lambda_*(W)^k
+\leq\frac{\sqrt{N-1}\,L^2\lambda_*(W)}{1-\lambda_*(W)}
+\leq\frac{\sqrt{N-1}\,L^2}{1-\lambda_*(W)}.
+\]
+
+\textbf{Bound on $\bm{b}_t^{(i)}-\bm{b}_t^{\mathrm{cen}}$.}
+The identical argument applies with
+$\|y_\tau^{(j)}\bm{z}_\tau^{(j)}\|\leq B_y L$.
+The bound $|y_\tau^{(j)}|\leq B_y$ a.s.\ with
+$B_y\coloneqq SL+B_\beta+C\sigma\sqrt{\log(TN/\delta)}$
+follows from $|y|\leq\|\phi\|\|\bm{\theta}^{\!*}\|+|\beta|+|\eta|$
+and sub-Gaussian concentration of $\eta_\tau^{(j)}$ followed by a
+union bound over $tN$ rounds.  The resulting bound is
+$\|\bm{b}_t^{(i)}-\bm{b}_t^{\mathrm{cen}}\|\leq
+\sqrt{N-1}\,B_y L/(1-\lambda_*(W))$.
+\end{proof}
+
+\subsection{Self-Normalized Concentration for the Centralized Estimator}
+
+\begin{lemma}[Martingale concentration, centralized]\label{lem:mart}
+Let $\bm{m}_t^{\mathrm{cen}}\coloneqq
+N^{-1}\sum_{\tau=1}^t\sum_{j=1}^N\eta_\tau^{(j)}\bm{z}_\tau^{(j)}$.
+With probability at least $1-\delta$, for all $t\geq 1$
+simultaneously,
+\begin{equation}
+\|\bm{m}_t^{\mathrm{cen}}\|_{(A_t^{\mathrm{cen}})^{-1}}
+\leq\frac{\beta_t}{\sqrt{N}},
+\qquad
+\beta_t\coloneqq\sigma\sqrt{d\log\!\bigl(1+tL^2/(N\lambda)\bigr)+2\log(1/\delta)}.
+\label{eq:mart}
+\end{equation}
+(Here $\beta_t$ denotes the sub-Gaussian concentration radius. This
+displayed form matches the derivation below exactly, with the
+$2\log(1/\delta)$ confidence term kept separate from the
+$d\log(1+\cdot)$ volumetric term, rather than the looser
+$d\log((1+\cdot)/\delta)$ written previously.)
+\end{lemma}
+
+\begin{proof}
+Enumerate agent-round pairs lexicographically. For $s=(\tau-1)N+j$ define
+$\epsilon_s\coloneqq\eta_\tau^{(j)}$
+and $\bm{\xi}_s\coloneqq\bm{z}_\tau^{(j)}/\sqrt{N}$.
+Then $\bm{\xi}_s$ is $\mathcal{G}_{s-1}$-measurable,
+$\epsilon_s$ is $\sigma$-sub-Gaussian conditional on $\mathcal{G}_{s-1}$,
+and $\|\bm{\xi}_s\|\leq L/\sqrt{N}$.
+Setting $V_s\coloneqq\lambda I+\sum_{s'=1}^s\bm{\xi}_{s'}\bm{\xi}_{s'}^\top$
+and $\bm{S}_s\coloneqq\sum_{s'=1}^s\epsilon_{s'}\bm{\xi}_{s'}$,
+at $s=tN$ we have $V_{tN}=A_t^{\mathrm{cen}}$ and
+$\bm{S}_{tN}=\sqrt{N}\,\bm{m}_t^{\mathrm{cen}}$.
+
+Applying Theorem~1 of Abbasi-Yadkori, P\'al, and Szepesv\'ari~(2011),
+with probability $\geq 1-\delta$, for all $s\geq 1$,
+\[
+\|\bm{S}_s\|_{V_s^{-1}}^2
+\leq 2\sigma^2\log\!\left(\frac{\det(V_s)^{1/2}}
+{\det(\lambda I)^{1/2}\cdot\delta}\right).
+\]
+
+To bound the log-determinant term at $s=tN$, we use the standard
+identity (Abbasi-Yadkori et al.\ 2011, Lemma~10),
+\[
+\log\frac{\det(V_{tN})}{\det(\lambda I)}
+=\log\det\!\Bigl(I+\tfrac{1}{\lambda}(V_{tN}-\lambda I)\Bigr)
+\leq d\log\!\Bigl(1+\tfrac{\mathrm{tr}(V_{tN}-\lambda I)}{d\lambda}\Bigr).
+\]
+Since $\mathrm{tr}(V_{tN}-\lambda I)=N^{-1}\sum_{\tau,j}\|\bm{z}_\tau^{(j)}\|^2\leq tL^2$,
+\[
+\log\frac{\det(V_{tN})^{1/2}}{\det(\lambda I)^{1/2}}
+\leq\frac{d}{2}\log\!\Bigl(1+\frac{tL^2}{N\lambda}\Bigr).
+\]
+Thus $\|\bm{S}_{tN}\|_{V_{tN}^{-1}}^2\leq
+\sigma^2\!\left[d\log\!\bigl(1+tL^2/(N\lambda)\bigr)+2\log(1/\delta)\right]
+=\beta_t^2$,
+giving $\|\sqrt{N}\,\bm{m}_t^{\mathrm{cen}}\|_{(A_t^{\mathrm{cen}})^{-1}}\leq\beta_t$
+and hence~\eqref{eq:mart}.
+The time-uniform version uses the standard peeling argument in
+Abbasi-Yadkori et al.
+\end{proof}
+
+\begin{lemma}[Contraction regime, uniqueness and geometric
+population convergence]\label{lem:contraction}
+Suppose Assumptions~\ref{ass:reg} and~\ref{ass:margin} hold, the
+argmax is $\mu_i$-a.e.\ unique on $B_R$ (so $F$ of
+Definition~\ref{def:F} is single-valued and, by
+Remark~\ref{rem:lip}, Lipschitz), and the contraction modulus
+\begin{equation}
+\kappa\;\coloneqq\;\sigma_{\min}^{-1}\bigl(L_u+L_\Sigma R\bigr)
+\;=\;\sigma_{\min}^{-1}\bigl(2C_{\mathrm{mar}}B_\beta L^2
++2C_{\mathrm{mar}}L^3 R\bigr)\;<\;1
+\label{eq:kappa}
+\end{equation}
+(a joint margin / low-noise / small-bias condition, met by small
+$C_{\mathrm{mar}}$, $B_\beta$, or large $\sigma_{\min}$).  Then $F$ is a
+$\kappa$-contraction on $B_R$, it has a \emph{unique} fixed point
+$\bm{\theta}_\infty\in B_R$, and the population iteration
+$\bm{\theta}_{n+1}=F(\bm{\theta}_n)$ converges geometrically, with
+$\|\bm{\theta}_n-\bm{\theta}_\infty\|\leq\kappa^n\|\bm{\theta}_0-\bm{\theta}_\infty\|$.
+\end{lemma}
+
+\begin{proof}
+For $\bm{\theta},\bm{\theta}'\in B_R$, write
+$F(\bm{\theta})-F(\bm{\theta}')
+=\bar{\Sigma}_z(\bm{\theta})^{-1}\bar{\bm{u}}(\bm{\theta})
+-\bar{\Sigma}_z(\bm{\theta}')^{-1}\bar{\bm{u}}(\bm{\theta}')$.
+Using the resolvent identity, the Lipschitz bounds of
+Remark~\ref{rem:lip}
+($\|\bar{\bm{u}}(\bm{\theta})-\bar{\bm{u}}(\bm{\theta}')\|\leq
+L_u\|\bm{\theta}-\bm{\theta}'\|$,
+$\|\bar{\Sigma}_z(\bm{\theta})-\bar{\Sigma}_z(\bm{\theta}')\|_{\mathrm{op}}
+\leq L_\Sigma\|\bm{\theta}-\bm{\theta}'\|$),
+$\bar{\Sigma}_z\succeq\sigma_{\min}I$, and
+$\|\bar{\bm{u}}\|\leq B_\beta L\leq\sigma_{\min}R$,
+\[
+\|F(\bm{\theta})-F(\bm{\theta}')\|
+\leq\sigma_{\min}^{-1}L_u\|\bm{\theta}-\bm{\theta}'\|
++\sigma_{\min}^{-2}L_\Sigma\|\bm{\theta}-\bm{\theta}'\|\cdot\|\bar{\bm{u}}\|
+\leq\sigma_{\min}^{-1}(L_u+L_\Sigma R)\|\bm{\theta}-\bm{\theta}'\|
+=\kappa\|\bm{\theta}-\bm{\theta}'\|.
+\]
+Banach's fixed-point theorem on the complete set $B_R$ (self-mapping by
+Assumption~\ref{ass:reg}(c)) gives the conclusions.
+\end{proof}
+
+% [ADVISOR: bandits] Replace the assumed tracking rate by the small-bias constant the Gronwall lift (Lemma~\ref{lem:tracking}) actually needs.
+\begin{assumption}[Small-bias condition]\label{ass:smallbias}
+The emergent bias $\bm{\delta}=\bm{\theta}_\infty-\bm{\theta}^{\!*}$ of
+the unique contraction fixed point (Lemma~\ref{lem:contraction}) and the
+problem constants satisfy
+\[
+b\;\coloneqq\;\frac{2\bigl(B_\beta L+L^2\|\bm{\delta}\|\bigr)}{\sigma_{\min}}
+\;<\;\frac12 .
+\]
+A sufficient closed form, using $\|\bm{\delta}\|\leq\sigma_{\min}^{-1}B_\beta L$
+from Assumption~\ref{ass:reg}(c), is
+$4B_\beta L\,(1+L^2/\sigma_{\min})<\sigma_{\min}$.  This sits in the same
+small-bias / low-noise / large-$\sigma_{\min}$ family as the contraction
+modulus $\kappa<1$ of~\eqref{eq:kappa}.  We additionally take the
+centralized trajectory $\bm{\theta}_\tau^{\mathrm{cen}}$ to remain in
+$B_R$, a mild stability condition that is far weaker than positing a
+tracking rate outright.
+\end{assumption}
+
+% [ADVISOR: bandits] Tracking is now derived, not assumed; only mild confinement remains.
+\begin{remark}[From assumed rate to derived rate]\label{rem:pol_conv}
+Earlier drafts \emph{assumed} the trajectory tracking
+$\|\bm{\theta}_\tau^{\mathrm{cen}}-\bm{\theta}_\infty\|\leq\epsilon_\tau$
+with $E_t=O(\sqrt t)$.  Lemma~\ref{lem:tracking} now \emph{derives} it.
+The mechanism is a self-referential bound. The persistent-excitation
+floor $\lambda_{\min}(A_t^{\mathrm{cen}})\geq t\sigma_{\min}/2$
+(Lemma~\ref{lem:bias} Step~5) divides the bias bound of
+Lemma~\ref{lem:bias}, whose only trajectory-dependent piece is
+$(B_\beta L+L^2\|\bm{\delta}\|)E_t$, producing
+$\epsilon_t\leq g_t+(b/t)E_t$ with $g_t=\widetilde O(t^{-1/2})$.  A
+discrete Gronwall argument closes this to $E_t=\widetilde O(\sqrt t)$
+exactly when $b<\tfrac12$.  The threshold $\tfrac12$ is sharp for the
+argument. At $b=\tfrac12$ the particular solution degrades to
+$t^{1/2}\log t$, and for $b>\tfrac12$ only $E_t=O(t^b)$ survives.  What
+is \emph{not} derived from first principles is the confinement of
+$\bm{\theta}_\tau^{\mathrm{cen}}$ to $B_R$, a standard stability property
+of regularized least squares that we take as a hypothesis
+(Assumption~\ref{ass:smallbias}).  Granting only that confinement, the
+tracking rate, and hence Theorem~\ref{thm:cec}, becomes unconditional.
+We work throughout in the basin of the unique contraction fixed point
+$\bm{\theta}_\infty$ of Lemma~\ref{lem:contraction}.
+\end{remark}
+
+\begin{lemma}[Bias concentration, centralized]\label{lem:bias}
+Let $\bm{s}_t^{\mathrm{cen}}\coloneqq
+N^{-1}\sum_{\tau=1}^t\sum_{j=1}^N
+\beta^{(j)}(\bm{x}_\tau^{(j)},a_\tau^{(j)})\bm{z}_\tau^{(j)}$, write
+$\epsilon_\tau\coloneqq\|\bm{\theta}_\tau^{\mathrm{cen}}-\bm{\theta}_\infty\|$
+for the realized tracking error, and
+$E_t\coloneqq\sum_{\tau=t_0+1}^t\epsilon_\tau$ for its partial sum.
+Under Assumption~\ref{ass:margin}, on the stability event that
+$\bm{\theta}_\tau^{\mathrm{cen}}\in B_R$ for all $\tau\leq t$, with
+probability at least $1-\delta$, for all $t\geq t_0$,
+\[
+\Bigl\|\bm{s}_t^{\mathrm{cen}}-(A_t^{\mathrm{cen}}-\lambda I)\bm{\delta}\Bigr\|
+\leq 2B_\beta L\sqrt{t\log(1/\delta)}+t_0 B_\beta L
++(B_\beta L+L^2\|\bm{\delta}\|)\,E_t.
+\]
+% [ADVISOR: bandits] E_t is the realized tracking sum, no longer an assumed rate; it is closed in Lemma~\ref{lem:tracking}.
+The partial sum $E_t$ is \emph{not} assumed small here. It is closed in
+Lemma~\ref{lem:tracking}, where $E_t=\widetilde O(\sqrt t)$ under the
+small-bias condition $b<\tfrac12$ of Assumption~\ref{ass:smallbias}.
+Granting that, the entire right-hand side is $\widetilde O(\sqrt t)$.
+\end{lemma}
+
+\begin{proof}
+We decompose $\bm{s}_t^{\mathrm{cen}}$ into three parts,
+\begin{align*}
+\bm{s}_t^{\mathrm{cen}}&=
+\underbrace{\frac{1}{N}\sum_{\tau=t_0+1}^t\sum_{j=1}^N
+\bm{u}_j(\bm{\theta}_\tau^{\mathrm{cen}})}_{\mathrm{(A)\ expected\ drift}}
++\underbrace{\frac{1}{N}\sum_{\tau=t_0+1}^t\sum_{j=1}^N
+\bigl[\bm{g}_\tau^{(j)}-\bm{u}_j(\bm{\theta}_\tau^{\mathrm{cen}})\bigr]}_{\mathrm{(B)\ martingale\ deviation}}
++\underbrace{\frac{1}{N}\sum_{\tau=1}^{t_0}\sum_{j=1}^N
+\bm{g}_\tau^{(j)}}_{\mathrm{(C)\ pre-}t_0\mathrm{\ residual}},
+\end{align*}
+where $\bm{g}_\tau^{(j)}=\beta^{(j)}(\bm{x}_\tau^{(j)},a_\tau^{(j)})
+\phi(\bm{x}_\tau^{(j)},a_\tau^{(j)})$.
+
+\textit{Step 2 (C).}  Since $\|\bm{g}_\tau^{(j)}\|\leq B_\beta L$,
+$\|(\mathrm{C})\|\leq t_0 B_\beta L$.
+
+\textit{Step 3 (B).}  The increments
+$\bm{g}_\tau^{(j)}-\bm{u}_j(\bm{\theta}_\tau^{\mathrm{cen}})$
+have conditional mean zero and are bounded by $2B_\beta L$.
+By the vector-valued Azuma--Hoeffding inequality (Hayes~2005,
+Theorem~1.8), with probability $\geq 1-\delta$,
+\[
+\|(\mathrm{B})\|\leq 2B_\beta L\sqrt{\frac{(t-t_0)\log(2d/\delta)}{N}}
+\leq 2B_\beta L\sqrt{t\log(1/\delta)},
+\]
+absorbing $d$ and constants into $\log(1/\delta)$.
+
+\textit{Step 4 (A).}  Using the fixed-point relation
+$\bar{\Sigma}_z(\bm{\theta}_\infty)\bm{\delta}=\bar{\bm{u}}(\bm{\theta}_\infty)$
+and the definition
+$\epsilon_\tau=\|\bm{\theta}_\tau^{\mathrm{cen}}-\bm{\theta}_\infty\|$ of
+the realized tracking error.
+Here we rely on Assumption~\ref{ass:margin}. By
+Remark~\ref{rem:lip} it makes
+$\bm{\theta}\mapsto\bar{\bm{u}}(\bm{\theta})$ and
+$\bm{\theta}\mapsto\bar{\Sigma}_z(\bm{\theta})$ Lipschitz \emph{across}
+the discontinuous greedy argmax (with constants
+$L_u\leq 2C_{\mathrm{mar}}B_\beta L^2$,
+$L_\Sigma\leq 2C_{\mathrm{mar}}L^3$), so that
+$\|\bm{u}_j(\bm{\theta}_\tau^{\mathrm{cen}})-\bm{u}_j(\bm{\theta}_\infty)\|
+\leq L_u\epsilon_\tau$ and
+$\|(\bar{\Sigma}_z(\bm{\theta}_\tau^{\mathrm{cen}})
+-\bar{\Sigma}_z(\bm{\theta}_\infty))\bm{\delta}\|\leq L_\Sigma\|\bm{\delta}\|\epsilon_\tau$.
+Summing the per-round Lipschitz errors,
+\[
+\Bigl\|(\mathrm{A})-\sum_{\tau=t_0+1}^t\bar{\Sigma}_z(\bm{\theta}_\infty)\bm{\delta}\Bigr\|
+\leq (B_\beta L+L^2\|\bm{\delta}\|)\sum_{\tau=t_0+1}^t\epsilon_\tau
+=(B_\beta L+L^2\|\bm{\delta}\|)\,E_t,
+\]
+where $E_t$ is the realized partial sum, closed in
+Lemma~\ref{lem:tracking}.  (Without
+Assumption~\ref{ass:margin} the maps need not be Lipschitz and this
+step fails.)
+
+\textit{Step 5.}  By the matrix Azuma inequality (Tropp~2012,
+Theorem~7.1), with probability $\geq 1-\delta$,
+$A_t^{\mathrm{cen}}-\lambda I=\sum_\tau\bar{\Sigma}_z(\bm{\theta}_\tau^{\mathrm{cen}})+M_t^\Sigma$
+where $\|M_t^\Sigma\|_{\mathrm{op}}\leq L^2\sqrt{2t\log(2d/\delta)}$.
+
+\textit{Step 6 (Combining).}  On the intersection event
+(probability $\geq 1-2\delta$),
+\[
+\|\bm{s}_t^{\mathrm{cen}}-(A_t^{\mathrm{cen}}-\lambda I)\bm{\delta}\|
+\leq 2B_\beta L\sqrt{t\log(1/\delta)}+t_0 B_\beta L
++(B_\beta L+L^2\|\bm{\delta}\|)E_t
++L^2\|\bm{\delta}\|\sqrt{2t\log(2d/\delta)}.
+\]
+Since $L^2\|\bm{\delta}\|\sqrt{2t\log(2d/\delta)}$,
+$(B_\beta L+L^2\|\bm{\delta}\|)E_t$ (with $E_t=\widetilde O(\sqrt t)$ by
+Lemma~\ref{lem:tracking}), and
+$2B_\beta L\sqrt{t\log(1/\delta)}$ are all $\widetilde O(\sqrt{t})$,
+we combine them into a single $O((B_\beta L+L^2\|\bm{\delta}\|)\sqrt{t\log(1/\delta)})$ term.
+Rescaling $\delta\leftarrow\delta/2$ yields the stated
+bound.
+\end{proof}
+
+% [ADVISOR: bandits] Gronwall lift: derive the tracking rate from the contraction floor instead of assuming it (discharges old ass:pol_conv).
+\begin{lemma}[Deterministic tracking via discrete Gronwall]\label{lem:tracking}
+Adopt Assumptions~\ref{ass:reg} and~\ref{ass:margin}, and work on the
+high-probability event of Lemmas~\ref{lem:mart} and~\ref{lem:bias}
+(probability $\geq 1-2\delta$).  Suppose the centralized trajectory is
+confined to $B_R$ (the stability hypothesis of Lemma~\ref{lem:bias}) and
+let
+\begin{equation}
+b\;\coloneqq\;\frac{2\bigl(B_\beta L+L^2\|\bm{\delta}\|\bigr)}{\sigma_{\min}}.
+\label{eq:bconst}
+\end{equation}
+If $b<\tfrac12$ then the realized tracking errors
+$\epsilon_t=\|\bm{\theta}_t^{\mathrm{cen}}-\bm{\theta}_\infty\|$ and their
+partial sums $E_t=\sum_{\tau\leq t}\epsilon_\tau$ satisfy, for all $t$
+past a finite deterministic time $t_1$,
+\[
+E_t\;\leq\;C_b\,\sqrt{t\,\log(t/\delta)}\;=\;\widetilde O(\sqrt t),
+\qquad
+\epsilon_t\;=\;\widetilde O\!\bigl(t^{-1/2}\bigr),
+\qquad C_b=O\!\bigl((\tfrac12-b)^{-1}\bigr).
+\]
+\end{lemma}
+
+\begin{proof}
+\emph{Self-referential inequality.}  From the normal equations
+$A_t^{\mathrm{cen}}\bm{\theta}_t^{\mathrm{cen}}=\bm{b}_t^{\mathrm{cen}}$
+and the decomposition
+$\bm{b}_t^{\mathrm{cen}}=(A_t^{\mathrm{cen}}-\lambda I)\bm{\theta}^{\!*}
++\bm{s}_t^{\mathrm{cen}}+\bm{m}_t^{\mathrm{cen}}$
+(Definition~\ref{def:cen}), with
+$\bm{\theta}_\infty=\bm{\theta}^{\!*}+\bm{\delta}$,
+\[
+\bm{\theta}_t^{\mathrm{cen}}-\bm{\theta}_\infty
+=(A_t^{\mathrm{cen}})^{-1}\bigl[\,\bm{s}_t^{\mathrm{cen}}
+-(A_t^{\mathrm{cen}}-\lambda I)\bm{\delta}
++\bm{m}_t^{\mathrm{cen}}-\lambda\bm{\theta}_\infty\,\bigr].
+\]
+By Lemma~\ref{lem:bias} Step~5 the persistent-excitation floor
+$\lambda_{\min}(A_t^{\mathrm{cen}})\geq t\sigma_{\min}/2$ holds once
+$t\geq t_1\coloneqq\lceil 8L^4\log(2d/\delta)/\sigma_{\min}^2\rceil$,
+so that $L^2\sqrt{2t\log(2d/\delta)}\leq t\sigma_{\min}/2$.  Taking
+Euclidean norms,
+\[
+\epsilon_t
+\leq\frac{2}{t\sigma_{\min}}\Bigl(
+\|\bm{s}_t^{\mathrm{cen}}-(A_t^{\mathrm{cen}}-\lambda I)\bm{\delta}\|
++\|\bm{m}_t^{\mathrm{cen}}\|+\lambda\|\bm{\theta}_\infty\|\Bigr).
+\]
+The Euclidean noise term obeys
+$\|\bm{m}_t^{\mathrm{cen}}\|\leq\sqrt{\lambda_{\max}(A_t^{\mathrm{cen}})}\,
+\|\bm{m}_t^{\mathrm{cen}}\|_{(A_t^{\mathrm{cen}})^{-1}}
+\leq\sqrt{\lambda+tL^2}\,\beta_t/\sqrt N=\widetilde O(\sqrt t)$
+by Lemma~\ref{lem:mart} and $\lambda_{\max}(A_t^{\mathrm{cen}})\leq\lambda+tL^2$.
+Substituting the bias bound of Lemma~\ref{lem:bias},
+\[
+\epsilon_t\leq\frac{2}{t\sigma_{\min}}
+\Bigl[\underbrace{2B_\beta L\sqrt{t\log(1/\delta)}+t_0B_\beta L
++\sqrt{\lambda+tL^2}\,\tfrac{\beta_t}{\sqrt N}+\lambda\|\bm{\theta}_\infty\|}_{
+=:S_t=\widetilde O(\sqrt t)}
++(B_\beta L+L^2\|\bm{\delta}\|)E_t\Bigr]
+=g_t+\frac{b}{t}E_t,
+\]
+where $g_t\coloneqq 2S_t/(t\sigma_{\min})\leq G\sqrt{\log(t/\delta)/t}$
+for an absolute $G$ that absorbs $\sigma,d,B_\beta,L,\lambda,
+\|\bm{\theta}_\infty\|,\sigma_{\min}^{-1}$ and $1/\sqrt N$, and $b$ is
+the constant~\eqref{eq:bconst}.
+
+\emph{Discrete Gronwall.}  Since $\epsilon_t=E_t-E_{t-1}$, the bound
+reads $E_t-E_{t-1}\leq (b/t)E_t+g_t$, hence for $t>b$,
+\[
+E_t\leq\frac{t}{t-b}\,E_{t-1}+\frac{t}{t-b}\,g_t .
+\]
+Unrolling this linear recursion from $t_1$,
+$E_t\leq P_t E_{t_1}+\sum_{s=t_1+1}^t (P_t/P_s)\tfrac{s}{s-b}\,g_s$ with
+$P_t=\prod_{s=t_1+1}^t\frac{s}{s-b}
+=\frac{\Gamma(t+1)\,\Gamma(t_1+1-b)}{\Gamma(t_1+1)\,\Gamma(t+1-b)}$.
+By Stirling $P_t=\Theta(t^b)$ and $P_t/P_s=\Theta((t/s)^b)$, so
+\[
+E_t\leq C_0\,t^b E_{t_1}
++C_0 G\,t^b\sum_{s=t_1+1}^t s^{-b-1/2}\sqrt{\log(s/\delta)} .
+\]
+For $b<\tfrac12$ the exponent $-b-\tfrac12>-1$, so the sum diverges with
+$t$ and is controlled by its integral,
+$\sum_{s\leq t}s^{-b-1/2}\sqrt{\log(s/\delta)}
+\leq\frac{2}{\tfrac12-b}\,t^{1/2-b}\sqrt{\log(t/\delta)}$.  Therefore
+\[
+E_t\leq C_0 E_{t_1}\,t^b
++\frac{2C_0 G}{\tfrac12-b}\,t^{1/2}\sqrt{\log(t/\delta)} .
+\]
+Confinement to $B_R$ gives $\epsilon_\tau\leq 2R$, so the base term is
+$E_{t_1}\leq 2Rt_1=O(1)$, and $t^b=o(t^{1/2})$ because $b<\tfrac12$.
+Hence $E_t\leq C_b\sqrt{t\log(t/\delta)}$ with
+$C_b=O((\tfrac12-b)^{-1})$, and feeding this back into the displayed
+inequality for $\epsilon_t$ gives $\epsilon_t=\widetilde O(t^{-1/2})$.
+
+\emph{Same family as the contraction.}  Both $b$ and the modulus
+$\kappa=\sigma_{\min}^{-1}(L_u+L_\Sigma R)$ are small precisely when
+$B_\beta$ and $\|\bm{\delta}\|$ are small or $\sigma_{\min}$ is large.
+Using $\|\bm{\delta}\|\leq\sigma_{\min}^{-1}B_\beta L$ from
+Assumption~\ref{ass:reg}(c),
+$b\leq 2B_\beta L(1+L^2/\sigma_{\min})/\sigma_{\min}$, so $b<\tfrac12$
+whenever $4B_\beta L(1+L^2/\sigma_{\min})<\sigma_{\min}$, the same
+small-bias regime that yields $\kappa<1$.
+\end{proof}
+
+% [ADVISOR: bandits] The former Assumption restated as a consequence of the Gronwall lemma.
+\begin{proposition}[Trajectory tracking, now a consequence]\label{prop:pol_conv}
+Under Assumptions~\ref{ass:reg}, \ref{ass:margin}, and~\ref{ass:smallbias},
+on the event of Lemma~\ref{lem:tracking} there are a finite $t_0$ and a
+deterministic envelope $\epsilon_\tau=\widetilde O(\tau^{-1/2})$,
+$\epsilon_\tau\downarrow 0$, with
+$\|\bm{\theta}_\tau^{\mathrm{cen}}-\bm{\theta}_\infty\|\leq\epsilon_\tau$
+for $\tau>t_0$ and partial sums $E_t=\widetilde O(\sqrt t)$.  This is the
+statement that earlier drafts posited as a hypothesis.
+\end{proposition}
+
+\begin{proof}
+Immediate from Lemma~\ref{lem:tracking}: take $t_0=t_1$ and the
+deterministic envelope $\epsilon_\tau=C_b\sqrt{\log(\tau/\delta)/\tau}$,
+whose partial sums are $\widetilde O(\sqrt t)$.
+\end{proof}
+
+\subsection{Concentration of the Centralized Estimator}
+
+\begin{proposition}[Concentration around the biased fixed point]
+\label{prop:conc}
+Under Assumptions~\ref{ass:reg}, \ref{ass:margin}, \ref{ass:bias},
+and~\ref{ass:smallbias} (so that Lemma~\ref{lem:tracking} and
+Proposition~\ref{prop:pol_conv} supply the tracking rate), with
+probability $\geq 1-\delta$,
+for all $t\geq t_0$, in the $A_t^{\mathrm{cen}}$-weighted norm,
+\begin{equation}
+\|\bm{\theta}_t^{\mathrm{cen}}-(\bm{\theta}^{\!*}+\bm{\delta})\|_{A_t^{\mathrm{cen}}}
+\leq\underbrace{\frac{\beta_t}{\sqrt{N}}}_{\text{noise}}
++\underbrace{O\!\left(B_\beta L\sqrt{\tfrac{\log(1/\delta)}{\sigma_{\min}}}\right)}_{\Theta(1)\ \text{persistent bias}}
++\underbrace{\frac{\lambda\|\bm{\theta}^{\!*}+\bm{\delta}\|}{\sqrt{t\sigma_{\min}}}}_{\text{regularization}}.
+\label{eq:conc}
+\end{equation}
+The bias term in the $A_t^{\mathrm{cen}}$-norm is $\Theta(1)$, so it
+does \emph{not} decay in $t$.  This is the crux of the result. The
+estimator is pulled a constant $A$-distance towards the biased fixed
+point and stays there.
+Equivalently, using the correct spectral scaling
+$A_t^{\mathrm{cen}}\asymp t\,\bar{\Sigma}_z(\bm{\theta}_\infty)$ for large
+$t$ (here $\Theta(t)$, \emph{not} $\Theta(Nt)$, see
+Remark~\ref{rem:spectral}), in the
+$\bar{\Sigma}_z(\bm{\theta}_\infty)$-weighted norm
+\begin{equation}
+\|\bm{\theta}_t^{\mathrm{cen}}-(\bm{\theta}^{\!*}+\bm{\delta})\|_{\bar{\Sigma}_z(\bm{\theta}_\infty)}
+\leq O\!\left(\frac{\beta_t}{\sqrt{N t}}\right)
++O\!\left(B_\beta L\sqrt{\tfrac{\log(1/\delta)}{t\sigma_{\min}}}\right)
++\frac{\lambda\|\bm{\theta}^{\!*}+\bm{\delta}\|}{t\sqrt{\sigma_{\min}}},
+\label{eq:conc_sigma}
+\end{equation}
+where the noise term is $O(\beta_t/\sqrt{Nt})=O(\beta_t/\sqrt{Nt\sigma_{\min}})$.
+The cooperative speedup is the $1/\sqrt N$ in the noise
+\emph{variance} (because $\bm{m}_t^{\mathrm{cen}}$ averages $N$ agents),
+\emph{not} an inflation of the design matrix to $\Theta(Nt)$.
+\end{proposition}
+
+\begin{remark}[Correct spectral scale of $A_t^{\mathrm{cen}}$]\label{rem:spectral}
+The centralized design matrix carries a $1/N$ prefactor
+(Definition~\ref{def:cen}) that exactly cancels the $N$ agents. Its
+trace satisfies
+$\mathrm{tr}(A_t^{\mathrm{cen}}-\lambda I)
+=N^{-1}\sum_{\tau,j}\|\bm{z}_\tau^{(j)}\|^2\leq tL^2$, so its eigenvalues
+are $\Theta(t)$, and under Assumption~\ref{ass:reg}(b)
+$A_t^{\mathrm{cen}}\succeq(\lambda+t\sigma_{\min})I\succeq t\sigma_{\min}I$
+once $\frac1N\sum_j\bm{z}_\tau^{(j)}\bm{z}_\tau^{(j)\top}$ has accumulated
+(formally, $A_t^{\mathrm{cen}}-\lambda I=\sum_{\tau}\bar{\Sigma}_z(\bm{\theta}_\tau^{\mathrm{cen}})+M_t^\Sigma$
+by Lemma~\ref{lem:bias} Step~5, so $\lambda_{\min}(A_t^{\mathrm{cen}})\geq
+t\sigma_{\min}-L^2\sqrt{2t\log(2d/\delta)}\geq\tfrac12 t\sigma_{\min}$ for
+$t$ large).  In particular $\lambda_{\min}(A_t^{\mathrm{cen}})$
+\emph{decreases} in $N$ for fixed per-round signal, and the bound
+$A_t^{\mathrm{cen}}\succeq Nt\sigma_{\min}I$ used in an earlier draft was
+off by a factor $N$.  Every downstream use of a $\Theta(Nt)$ design
+matrix is corrected to $\Theta(t)$ below.
+\end{remark}
+
+\begin{proof}
+Write
+$\bm{\theta}_t^{\mathrm{cen}}-(\bm{\theta}^{\!*}+\bm{\delta})
+=(A_t^{\mathrm{cen}})^{-1}\bigl[\bm{s}_t^{\mathrm{cen}}
+-(A_t^{\mathrm{cen}}-\lambda I)\bm{\delta}
++\bm{m}_t^{\mathrm{cen}}-\lambda(\bm{\theta}^{\!*}+\bm{\delta})\bigr]$.
+
+\emph{$A$-norm bound.}  By the triangle inequality in the
+$(A_t^{\mathrm{cen}})^{-1}$-norm,
+\[
+\|\bm{\theta}_t^{\mathrm{cen}}-(\bm{\theta}^{\!*}+\bm{\delta})\|_{A_t^{\mathrm{cen}}}
+\leq\underbrace{\|\bm{m}_t^{\mathrm{cen}}\|_{(A_t^{\mathrm{cen}})^{-1}}}_{\leq\beta_t/\sqrt N}
++\underbrace{\|\bm{s}_t^{\mathrm{cen}}-(A_t^{\mathrm{cen}}-\lambda I)\bm{\delta}\|_{(A_t^{\mathrm{cen}})^{-1}}}_{\text{bias}}
++\underbrace{\lambda\|\bm{\theta}^{\!*}+\bm{\delta}\|_{(A_t^{\mathrm{cen}})^{-1}}}_{\text{reg.}}.
+\]
+The noise term is $\leq\beta_t/\sqrt N$ by Lemma~\ref{lem:mart}.
+For the bias term, $\|\bm{v}\|_{(A_t^{\mathrm{cen}})^{-1}}\leq
+\|\bm{v}\|/\sqrt{\lambda_{\min}(A_t^{\mathrm{cen}})}\leq\|\bm{v}\|/\sqrt{t\sigma_{\min}/2}$
+by Remark~\ref{rem:spectral}. With the Euclidean bias bound
+$O(B_\beta L\sqrt{t\log(1/\delta)})$ of Lemma~\ref{lem:bias} this gives
+\[
+\|\bm{s}_t^{\mathrm{cen}}-(A_t^{\mathrm{cen}}-\lambda I)\bm{\delta}\|_{(A_t^{\mathrm{cen}})^{-1}}
+\leq\frac{O(B_\beta L\sqrt{t\log(1/\delta)})}{\sqrt{t\sigma_{\min}/2}}
+=O\!\left(B_\beta L\sqrt{\tfrac{\log(1/\delta)}{\sigma_{\min}}}\right),
+\]
+a quantity \emph{independent of $t$}. The $\sqrt t$ in the
+numerator and the $\sqrt t$ from $\lambda_{\min}(A_t^{\mathrm{cen}})$
+cancel.  This is the persistent $\Theta(1)$ bias.
+Similarly the regularization term is
+$\leq\lambda\|\bm{\theta}^{\!*}+\bm{\delta}\|/\sqrt{t\sigma_{\min}/2}
+=O(\lambda\|\bm{\theta}^{\!*}+\bm{\delta}\|/\sqrt{t\sigma_{\min}})$.
+This proves~\eqref{eq:conc}.
+
+\emph{$\bar{\Sigma}_z$-norm bound.}  By Remark~\ref{rem:spectral},
+$A_t^{\mathrm{cen}}\asymp t\,\bar{\Sigma}_z(\bm{\theta}_\infty)$
+($\Theta(t)$, not $\Theta(Nt)$).  Hence for any vector $\bm{w}$,
+$\|\bm{w}\|_{\bar{\Sigma}_z}^2=\bm{w}^\top\bar{\Sigma}_z\bm{w}
+\asymp t^{-1}\bm{w}^\top A_t^{\mathrm{cen}}\bm{w}
+=t^{-1}\|\bm{w}\|_{A_t^{\mathrm{cen}}}^2$,
+so $\|\bm{w}\|_{\bar{\Sigma}_z}\asymp t^{-1/2}\|\bm{w}\|_{A_t^{\mathrm{cen}}}$.
+Applying this with
+$\bm{w}=\bm{\theta}_t^{\mathrm{cen}}-(\bm{\theta}^{\!*}+\bm{\delta})$
+and dividing each term of~\eqref{eq:conc} by $\sqrt t$ gives
+\eqref{eq:conc_sigma}.  In particular the noise contribution is
+$t^{-1/2}\cdot\beta_t/\sqrt N=\beta_t/\sqrt{Nt}$. The cooperative
+gain is the $1/\sqrt N$, and the $1/\sqrt t$ is the usual estimation
+decay. There is no spurious $1/N$ (the earlier
+$\beta_t/(N\sqrt t)$ was the factor-$N$ error of
+Remark~\ref{rem:spectral}).
+\end{proof}
+
+% [ADVISOR: bandits] Headline is the noise error-decay speedup beta_t/sqrt(Nt), not a t* proportional to 1/N law.
+\begin{remark}[Cooperative error decay, the genuine speedup]\label{rem:tstar}
+The cooperative gain that the theory actually delivers, and that the
+experiments reproduce, is the \emph{error-decay rate}. The noise
+contribution to~\eqref{eq:conc_sigma} is $\beta_t/\sqrt{Nt}$, so pooling
+$N$ agents divides the estimation-error variance by $N$ and the error
+itself decays as $1/\sqrt{Nt}$.  Plotted against $t$ this is a
+slope-$(-\tfrac12)$ line, matching the measured exponent.  We do
+\emph{not} headline a collapse time proportional to $1/N$.  For
+reference, the right-hand side of~\eqref{eq:conc_sigma} falls below
+$\|\bm{\delta}\|_{\bar{\Sigma}_z(\bm{\theta}_\infty)}/4$
+(equivalently~\eqref{eq:conc} below
+$\|\bm{\delta}\|_{A_t^{\mathrm{cen}}}/4$, since the two norms differ by
+the factor $\sqrt t$) for all $t\geq t_{\mathrm{cen}}^*$, where
+\begin{equation}
+t_{\mathrm{cen}}^*\coloneqq\Theta\!\left(
+\underbrace{\frac{\sigma^2 d\log(T/\delta)}{N\,\|\bm{\delta}\|_{\bar{\Sigma}_z}^2}}_{\text{noise, }\propto 1/N}
++\underbrace{\frac{B_\beta^2 L^2\log(1/\delta)}{\sigma_{\min}\,\|\bm{\delta}\|_{\bar{\Sigma}_z}^2}}_{\text{bias, }\propto N^0}
+\right).
+\label{eq:tcen_def}
+\end{equation}
+Only the noise component of this threshold carries $1/N$. The bias
+component, which reflects the policy-to-fixed-point discrepancy, does
+not.  So $t_{\mathrm{cen}}^*$ is \emph{not} a clean $1/N$ quantity once
+bias dominates.  The reliable headline is the variance speedup above,
+not the threshold.
+\end{remark}
+
+
+%%============================================================
+\section{Coupled Exploration Collapse}\label{sec:cec}
+%%============================================================
+
+\begin{definition}[$\gamma$-decoupling region]\label{def:dec}
+Fix an emergent bias $\bm{\delta}$ from Lemma~\ref{lem:fp}
+and $\gamma>0$.
+Let $\tilde{a}_{\bm{\delta}}(\bm{x})\coloneqq
+\argmax_a\langle\phi(\bm{x},a),\bm{\theta}^{\!*}+\bm{\delta}\rangle$.
+Define
+\[
+\mathcal{X}_{\mathrm{dec}}^\gamma\coloneqq\Bigl\{\bm{x}\in\mathcal{X}:\;
+\langle\phi(\bm{x},\tilde{a}_{\bm{\delta}}(\bm{x}))
+-\phi(\bm{x},\pi^{\!*}(\bm{x})),\;\bm{\theta}^{\!*}+\bm{\delta}\rangle\geq\gamma
+\Bigr\}.
+\]
+The \emph{latent suboptimality} on this region is
+\[
+\Delta_{\min}^\gamma\coloneqq
+\inf_{\bm{x}\in\mathcal{X}_{\mathrm{dec}}^\gamma}
+\bigl[\langle\phi(\bm{x},\pi^{\!*}(\bm{x})),\bm{\theta}^{\!*}\rangle
+-\langle\phi(\bm{x},\tilde{a}_{\bm{\delta}}(\bm{x})),\bm{\theta}^{\!*}\rangle\bigr]>0.
+\]
+Write $\mu_G=N^{-1}\sum_i\mu_i$.
+\end{definition}
+
+% [ADVISOR: bandits] Now unconditional under the derived small-bias condition b<1/2.
+\begin{theorem}[Coupled Exploration Collapse, unconditional under the
+small-bias condition]\label{thm:cec}
+Fix $\gamma>0$ with $\mu_G(\mathcal{X}_{\mathrm{dec}}^\gamma)>0$,
+$\Delta_{\min}^\gamma>0$, and the \emph{margin hypothesis}
+\begin{equation}
+\gamma\;\geq\;\frac{6\sqrt{2}\,\alpha_{t^\star}L}{\sqrt{t^\star\sigma_{\min}}}
+\qquad(\text{note }\sqrt{t^\star\sigma_{\min}},\ \emph{not}\ \sqrt{Nt^\star\sigma_{\min}}),
+\label{eq:margin_hyp}
+\end{equation}
+where
+\begin{equation}
+t^\star(G,\gamma)\coloneqq
+\underbrace{\Theta\!\left(
+\frac{\sigma^2 dL^2\log(T/\delta)}{\gamma^2\sigma_{\min}}
++\frac{B_\beta^2 L^4\log(1/\delta)}{\gamma^2\sigma_{\min}^2}\right)}_{\text{estimate + per-agent bonus, no }1/N}
++\underbrace{\frac{C\sqrt{N}\,L^3(B_y+S)}{\gamma(W)\,\gamma\,\sigma_{\min}^{3/2}}}_{\text{gossip proximity, }\propto\sqrt N}.
+\label{eq:tstar_full}
+\end{equation}
+Under Assumptions~\ref{ass:reg}, \ref{ass:margin}, \ref{ass:bias},
+and~\ref{ass:smallbias} (the last supplying, via
+Lemma~\ref{lem:tracking}, the trajectory tracking that earlier drafts
+assumed), naive cooperative LinUCB
+satisfies, with probability $\geq 1-\delta$ (for
+$N(T-t^\star)\mu_G(\mathcal{X}_{\mathrm{dec}}^\gamma)\geq C\log(1/\delta)$), the bound
+\begin{equation}
+R_T^{\mathrm{net}}\geq
+\tfrac12\,N\cdot\Delta_{\min}^\gamma\cdot\mu_G(\mathcal{X}_{\mathrm{dec}}^\gamma)
+\cdot\bigl(T-t^\star(G,\gamma)\bigr).
+\label{eq:cec_bound}
+\end{equation}
+In particular, for $T\gg t^\star(G,\gamma)$,
+$R_T^{\mathrm{net}}=\Omega(NT)$.
+\end{theorem}
+
+\begin{remark}[The collapse time no longer enjoys a $1/N$ speedup in
+its leading term]\label{rem:noN}
+Contrast~\eqref{eq:tstar_full} with Remark~\ref{rem:tstar}. The
+\emph{centralized estimator} concentrates at $t_{\mathrm{cen}}^*\propto
+1/N$, but the \emph{collapse} requires in addition that each agent's
+own UCB bonus (built from $A_t^{(i)}=\Theta(t)$, \emph{not}
+$\Theta(Nt)$, see Remark~\ref{rem:spectral}) fall below $\gamma/3$.
+That bonus condition gives the leading term of~\eqref{eq:tstar_full},
+which carries \emph{no} $1/N$ (it is a factor $\sqrt N$ harder than the
+erroneous $\sqrt{Nt^\star\sigma_{\min}}$ form would suggest, since the bound is
+on $\gamma\sqrt{t^\star}$, and dropping the spurious $\sqrt N$ raises the
+required $t^\star$ by a factor $N$).  Pooling still accelerates the
+\emph{estimate}. It does not shrink the per-agent exploration radius.
+Consequently the cooperative speedup of collapse is weaker than the
+earlier draft claimed.
+% [ADVISOR: bandits] Point to the true cooperative gain (variance), not a t* speedup.
+The genuine cooperative gain is the $1/\sqrt N$ variance reduction in the
+estimator error (Remark~\ref{rem:tstar}), not an acceleration of
+$t^\star$.
+\end{remark}
+
+\begin{proof}
+\textit{Step 1 (concentration around the biased fixed point).}
+By Proposition~\ref{prop:conc} (bound~\eqref{eq:conc_sigma}) and the
+choice of $t_{\mathrm{cen}}^*(\gamma)$ in
+Remark~\ref{rem:tstar}/\eqref{eq:tstar_full}, for all $t$ at least the
+first (no-$1/N$) bracket of~\eqref{eq:tstar_full}, with probability
+$\geq 1-\delta$,
+\[
+\|\bm{\theta}_t^{\mathrm{cen}}-(\bm{\theta}^{\!*}+\bm{\delta})\|_{\bar{\Sigma}_z(\bm{\theta}_\infty)}
+\leq\frac{\gamma\sqrt{\sigma_{\min}}}{12L}.
+\]
+
+By Lemma~\ref{lem:gossip}, using the resolvent identity
+$(A_t^{(i)})^{-1}-(A_t^{\mathrm{cen}})^{-1}
+=(A_t^{(i)})^{-1}(A_t^{\mathrm{cen}}-A_t^{(i)})(A_t^{\mathrm{cen}})^{-1}$
+and the \emph{corrected} lower bound (Remark~\ref{rem:spectral})
+$A_t^{(i)}\succeq A_t^{\mathrm{cen}}-\|A_t^{(i)}-A_t^{\mathrm{cen}}\|_{\mathrm{op}} I
+\succeq(t\sigma_{\min}/2)I$
+(for $t$ large enough that
+$\sqrt{N}L^2/\gamma(W)\leq t\sigma_{\min}/2$, i.e.\
+$t\geq 2\sqrt N L^2/(\gamma(W)\sigma_{\min})$), together with the
+$\sqrt N$ gossip bound $\|A_t^{(i)}-A_t^{\mathrm{cen}}\|_{\mathrm{op}}\leq
+\sqrt N L^2/\gamma(W)$ and the analogous $\bm{b}$ bound, we obtain
+\[
+\|\widehat{\bm{\theta}}_t^{(i)}-\bm{\theta}_t^{\mathrm{cen}}\|_{\bar{\Sigma}_z(\bm{\theta}_\infty)}
+\leq\frac{C'\sqrt{N}\,L^2(B_y+S)}{\gamma(W)\,t\,\sigma_{\min}}.
+\]
+(The $\sqrt N$ comes from the gossip bound of Lemma~\ref{lem:gossip}.
+The single power of $t\sigma_{\min}$ replaces the earlier spurious
+$Nt\sigma_{\min}^{1/2}$.)  For
+$t\geq 12C'\sqrt N L^3(B_y+S)/(\gamma(W)\gamma\sigma_{\min}^{3/2})$
+(the second bracket of~\eqref{eq:tstar_full}) this is
+$\leq\gamma\sqrt{\sigma_{\min}}/(12L)$.
+The triangle inequality then gives, for all $t\geq t^\star(G,\gamma)$,
+\begin{equation}
+\|\widehat{\bm{\theta}}_t^{(i)}-(\bm{\theta}^{\!*}+\bm{\delta})\|_{\bar{\Sigma}_z(\bm{\theta}_\infty)}
+\leq\frac{\gamma\sqrt{\sigma_{\min}}}{6L}.
+\label{eq:theta_hat_close}
+\end{equation}
+
+\textit{Step 2 (deterministic selection of the biased-optimal action).}
+Fix $\bm{x}\in\mathcal{X}_{\mathrm{dec}}^\gamma$.
+Write $\Delta_\phi=\phi(\bm{x},\tilde{a})-\phi(\bm{x},a^\star)$,
+$L_\Delta=\|\Delta_\phi\|\leq 2L$.
+
+The LinUCB score difference is
+$\mathrm{UCB}_t^{(i)}(\tilde{a})-\mathrm{UCB}_t^{(i)}(a^\star)
+=(\mathrm{I})+(\mathrm{II})$
+where $(\mathrm{I})=\langle\Delta_\phi,\widehat{\bm{\theta}}_t^{(i)}\rangle$
+and $(\mathrm{II})=\alpha_t[\|\phi(\bm{x},\tilde{a})\|_{(A_t^{(i)})^{-1}}
+-\|\phi(\bm{x},a^\star)\|_{(A_t^{(i)})^{-1}}]$.
+
+\textbf{Term (I).}
+Writing $\widehat{\bm{\theta}}_t^{(i)}=\bm{\theta}^{\!*}+\bm{\delta}+\Delta\bm{\theta}$
+with $\|\Delta\bm{\theta}\|_{\bar{\Sigma}_z}\leq\gamma\sqrt{\sigma_{\min}}/(6L)$
+from~\eqref{eq:theta_hat_close}, and applying Cauchy--Schwarz
+in the $\bar{\Sigma}_z$-weighted inner product
+($\bar{\Sigma}_z\succeq\sigma_{\min}I$ gives
+$\|\Delta_\phi\|_{\bar{\Sigma}_z^{-1}}\leq L_\Delta/\sqrt{\sigma_{\min}}$),
+\[
+(\mathrm{I})\geq\gamma-\frac{L_\Delta}{\sqrt{\sigma_{\min}}}
+\cdot\frac{\gamma\sqrt{\sigma_{\min}}}{6L}\geq\gamma-\frac{2L}{6L}\gamma
+=\frac{2\gamma}{3}.
+\]
+
+\textbf{Term (II).}
+Since $A_t^{(i)}\succeq(t\sigma_{\min}/2)I$ (Remark~\ref{rem:spectral},
+\emph{not} $Nt\sigma_{\min}/2$),
+\[
+|(\mathrm{II})|\leq 2\alpha_t\cdot\frac{L}{\sqrt{t\sigma_{\min}/2}}
+=\frac{2\sqrt{2}\,\alpha_t L}{\sqrt{t\sigma_{\min}}}.
+\]
+The margin hypothesis~\eqref{eq:margin_hyp},
+$\gamma\geq 6\sqrt{2}\,\alpha_{t^\star}L/\sqrt{t^\star\sigma_{\min}}$,
+ensures this is $\leq\gamma/3$ for $t\geq t^\star$ (using that
+$\alpha_t L/\sqrt{t\sigma_{\min}}$ is decreasing in $t$ up to
+logarithmic factors).
+(Here the absence of $\sqrt N$ inside the square root makes this
+condition a factor $\sqrt N$ \emph{harder} than the erroneous
+$\sqrt{Nt^\star\sigma_{\min}}$ form. The per-agent design matrix is
+$\Theta(t)$, so the exploration bonus does not shrink with $N$.  The
+constant $6\sqrt 2\approx 8.49$ arises from the factor-of-$\sqrt 2$ in
+the bonus bound.)
+
+\textbf{Net score.}
+$(\mathrm{I})+(\mathrm{II})\geq 2\gamma/3-\gamma/3=\gamma/3>0$.
+Hence, for $t\geq t^\star$ and $\bm{x}_t^{(i)}\in\mathcal{X}_{\mathrm{dec}}^\gamma$,
+the LinUCB rule selects $\tilde{a}_{\bm{\delta}}(\bm{x}_t^{(i)})$
+rather than $\pi^{\!*}(\bm{x}_t^{(i)})$, deterministically.
+
+\textit{Step 3 (accumulating latent regret, high probability).}
+Each selection with $\bm{x}_t^{(i)}\in\mathcal{X}_{\mathrm{dec}}^\gamma$
+(for $t>t^\star$) incurs instantaneous latent regret
+$\geq\Delta_{\min}^\gamma$.  Let
+$Z_t^{(i)}=\mathbb{1}[\bm{x}_t^{(i)}\in\mathcal{X}_{\mathrm{dec}}^\gamma]$.
+These are independent across $(t,i)$ (contexts are drawn i.i.d.\
+across agents and rounds) with
+$\mathbb{E}[Z_t^{(i)}]=\mu_i(\mathcal{X}_{\mathrm{dec}}^\gamma)$, and
+$\sum_{t>t^\star,i}\mathbb{E}[Z_t^{(i)}]
+=N(T-t^\star)\mu_G(\mathcal{X}_{\mathrm{dec}}^\gamma)\eqqcolon m$.
+By the multiplicative Chernoff bound,
+$\Pr\bigl[\sum_{t>t^\star,i}Z_t^{(i)}<\tfrac12 m\bigr]\leq e^{-m/8}\leq\delta$
+under the stated condition $m\geq 8\log(1/\delta)$.  On this event,
+\[
+R_T^{\mathrm{net}}\geq\Delta_{\min}^\gamma\sum_{t>t^\star,i}Z_t^{(i)}
+\geq\tfrac12\,N\,\Delta_{\min}^\gamma\,\mu_G(\mathcal{X}_{\mathrm{dec}}^\gamma)\,(T-t^\star),
+\]
+which is~\eqref{eq:cec_bound}.  (Combining with the
+probability-$\geq 1-\delta$ concentration event of Steps~1 and~2 and a
+union bound rescales $\delta$ by a constant.)
+\end{proof}
+
+\begin{remark}[Why ``exploration collapse'']\label{rem:mech}
+The two ingredients scale differently in $N$.  The \emph{estimator
+error} towards the biased fixed point is $O(\beta_t/\sqrt{Nt})$
+(Proposition~\ref{prop:conc}), so cooperation \emph{accelerates} it by
+$1/\sqrt N$.  The per-agent \emph{UCB bonus}, however, is
+$\Theta(\alpha_t/\sqrt{t\sigma_{\min}})$, with \emph{no} $N$ speedup,
+because $A_t^{(i)}=\Theta(t)$ (Remark~\ref{rem:spectral}), and pooling does
+not narrow the exploration radius.  Collapse occurs once \emph{both}
+fall below $\Theta(\gamma)$. The biased point is identified quickly,
+but exploration is suppressed only after the (slower, $N$-independent)
+bonus shrinks.  Gossip contributes an additional
+$\sqrt N/\gamma(W)$ proximity cost (Lemma~\ref{lem:gossip}), which shifts
+the \emph{collapse time} $t^\star(G,\gamma)$, not the asymptotic regret
+\emph{level}.
+% [ADVISOR: MAS] Demote to collapse-time / fixed-point selection; no bathtub, no directional regret claim.
+For $T\gg t^\star$ the bound~\eqref{eq:cec_bound} is bias-dominated and
+essentially insensitive to $\gamma(W)$.  What $\gamma(W)$ genuinely
+selects is \emph{which} biased fixed point is reached, the
+network-aggregate $\bm{\delta}$ in the supercritical regime versus the
+agent-local $\bm{\delta}_i$ in the subcritical one
+(Corollary~\ref{cor:both}).  We make no monotone or ``bathtub'' claim for
+total regret in $\gamma(W)$.
+\end{remark}
+
+
+%%============================================================
+\section{The Phase Transition}\label{sec:phase}
+%%============================================================
+
+Theorem~\ref{thm:cec} applies whenever $t^\star(G,\gamma)\ll T$,
+which holds provided gossip mixes before the per-agent bonus has shrunk
+below the margin.  Requiring each term of~\eqref{eq:tstar_full} to be
+$\leq T/2$ yields the supercritical conditions
+\begin{equation}
+\gamma(W)\gtrsim\frac{\sqrt{N}\,L^3(B_y+S)}{T\,\gamma\,\sigma_{\min}^{3/2}},\qquad
+\gamma^2\gtrsim\frac{\sigma^2 dL^2\log(T/\delta)}{T\sigma_{\min}}.
+\label{eq:phase}
+\end{equation}
+The first is a \emph{gossip-rate} condition (now a factor $\sqrt N$
+\emph{stricter}, and scaling as $1/\gamma$ rather than $1/\gamma^2$,
+reflecting the $\sqrt N$ gossip bound of Lemma~\ref{lem:gossip}). The
+second is a \emph{margin} condition (now a factor $N$ \emph{harder},
+having lost the spurious $1/N$, since the per-agent bonus enjoys no
+cooperative speedup, Remark~\ref{rem:noN}).  Together they define the
+supercritical regime where Theorem~\ref{thm:cec} gives
+$R_T^{\mathrm{net}}=\Omega(NT)$.
+
+% [ADVISOR: MAS] Demote the phase-transition claim to fixed-point selection and collapse-time; drop the bathtub.
+A word on what this section does and does not establish. We prove
+collapse in two separated regimes, the supercritical one above and the
+deep-subcritical one of Theorem~\ref{thm:cec_sub}.  The role of
+connectivity is to select \emph{which} fixed point is reached and to set
+the collapse time $t^\star(G,\gamma)$, not to move the asymptotic regret
+level, which is bias-dominated and $\gamma(W)$-insensitive once
+$T\gg t^\star$.  The clean $\gamma(W)$-dependence is the fixed-point
+shift from the agent-local $\bm{\delta}_i$ to the network-aggregate
+$\bm{\delta}$ (Corollary~\ref{cor:both}), and its effect on regret can
+take \emph{either} sign, according to whether the agent biases
+$\{\bm{\delta}_i\}$ add constructively or cancel under averaging.  A
+universal monotone or ``bathtub'' law in $\gamma(W)$ is therefore
+unsupported, and we do not claim one.
+% [ADVISOR: MAS] State the true connectivity mechanism; there is no spectral-gap "inversion."
+There is likewise no ``inversion'' effect by which denser connectivity
+\emph{worsens} naive regret.  Naive cooperative LinUCB is
+$\gamma(W)$-insensitive in its asymptotic regret level, whereas D-CESA
+regret \emph{decreases} in connectivity through term~(iii) of
+Theorem~\ref{thm:dcesa} (scaling as $1/(1-\bar\tau)$, comparable to
+$1/\gamma(W)$ under symmetry).  Any rise of a naive-to-D-CESA regret
+ratio with $\gamma(W)$ reflects D-CESA exploiting connectivity, not naive
+degrading.
+The intermediate band between the two regimes is left open
+(Section~\ref{sec:caveats}, C3).
+
+\subsection{Individual Biased Fixed Points}\label{sec:indiv}
+
+All machinery from Section~\ref{sec:overlap} specializes to $N=1$.
+For each agent $i$, define
+\[
+\Phi_i(\bm{\theta})\coloneqq
+\overline{\mathrm{co}}\bigl\{
+\bm{\theta}^{\!*}+(\Sigma_{z,\pi}^{(i)}(\bm{\theta}))^{-1}
+\bm{u}_{i,\pi}(\bm{\theta}):\pi\in\Pi(\bm{\theta})\bigr\}
+\]
+with expectations under $\bm{x}\sim\mu_i$ alone.
+Kakutani applied to $\Phi_i$ on $B_R^{(i)}$ gives an individual biased
+fixed point.
+
+\begin{lemma}[Individual biased fixed point]\label{lem:fp_ind}
+Under the single-agent analog of Assumption~\ref{ass:reg} for each $i$,
+there exists $\bm{\theta}_\infty^{(i)}\in B_R^{(i)}$ with
+$\bm{\theta}_\infty^{(i)}\in\Phi_i(\bm{\theta}_\infty^{(i)})$.
+Write $\bm{\delta}_i\coloneqq\bm{\theta}_\infty^{(i)}-\bm{\theta}^{\!*}$.
+\end{lemma}
+
+\begin{assumption}[Individual bias non-triviality]\label{ass:bias_ind}
+For each $i$, there exists a fixed point $\bm{\delta}_i$ satisfying
+\[
+\|\bm{\delta}_i\|_{\Sigma_z^{(i)}(\bm{\theta}_\infty^{(i)})}
+\geq\rho_0^{\mathrm{ind}}\cdot
+\frac{B_\beta}{\sqrt{\lambda_{\max}(\Sigma_z^{(i)}(\bm{\theta}_\infty^{(i)}))}}
+\]
+for some $\rho_0^{\mathrm{ind}}\in(0,1]$ (common across agents by
+relabelling).
+\end{assumption}
+
+Define the \emph{individual} decoupling region at agent $i$ as
+\[
+\mathcal{X}_{\mathrm{dec},i}^\gamma\coloneqq
+\bigl\{\bm{x}\in\mathcal{X}:\;
+\langle\phi(\bm{x},\tilde{a}_i(\bm{x}))-\phi(\bm{x},\pi^{\!*}(\bm{x})),
+\bm{\theta}^{\!*}+\bm{\delta}_i\rangle\geq\gamma\bigr\},
+\]
+where $\tilde{a}_i(\bm{x})=\argmax_a\langle\phi(\bm{x},a),\bm{\theta}^{\!*}+\bm{\delta}_i\rangle$,
+with latent gap
+$\Delta_{\min,i}^\gamma=\inf_{\bm{x}\in\mathcal{X}_{\mathrm{dec},i}^\gamma}
+[\langle\phi(\bm{x},\pi^{\!*}),\bm{\theta}^{\!*}\rangle
+-\langle\phi(\bm{x},\tilde{a}_i),\bm{\theta}^{\!*}\rangle]>0$.
+
+\subsection{Subcritical Leakage Bound}
+
+\begin{definition}[Isolated reference estimator]
+\[
+A_t^{(i),\mathrm{iso}}\coloneqq\lambda I+\sum_{\tau=1}^t
+\bm{z}_\tau^{(i)}\bm{z}_\tau^{(i)\top},\quad
+\bm{b}_t^{(i),\mathrm{iso}}\coloneqq\sum_{\tau=1}^t
+y_\tau^{(i)}\bm{z}_\tau^{(i)},\quad
+\bm{\theta}_t^{(i),\mathrm{iso}}\coloneqq(A_t^{(i),\mathrm{iso}})^{-1}
+\bm{b}_t^{(i),\mathrm{iso}}.
+\]
+\end{definition}
+
+\begin{lemma}[Subcritical leakage bound]\label{lem:leakage}
+Write $\gamma_\dagger(W)\coloneqq 1-\lambda_N(W)=\|I-W\|_{\mathrm{op}}$
+for the \emph{full} spectral spread (so $\gamma_\dagger\geq\gamma(W)$,
+with equality of order under Assumption~\ref{ass:lazy} when the
+non-principal spectrum is one-sided).  For any $t\leq T$ and agent $i$,
+\begin{equation}
+\|A_t^{(i)}-A_t^{(i),\mathrm{iso}}\|_{\mathrm{op}}
+\leq 2L^2\sum_{k=1}^t(1-[W^k]_{ii})
+\leq 2L^2\,\gamma_\dagger(W)\sum_{k=1}^t k
+\leq L^2\,\gamma_\dagger(W)\,t^2.
+\label{eq:leakage_exact}
+\end{equation}
+Two consequences follow.
+\begin{enumerate}[(a)]
+\item \textbf{Deep subcritical bound (constant leakage).}
+If $\gamma_\dagger(W)\leq c_0/T^2$ for an absolute constant $c_0>0$
+(a near-isolation condition, implied by, and in general stronger
+than, $\gamma(W)\leq c_0/T^2$), then for all $t\leq T$,
+\begin{equation}
+\|A_t^{(i)}-A_t^{(i),\mathrm{iso}}\|_{\mathrm{op}}
+\leq L^2\gamma_\dagger(W)T^2\leq L^2 c_0.
+\label{eq:leakage_const}
+\end{equation}
+\item \textbf{General bound.}
+$\|A_t^{(i)}-A_t^{(i),\mathrm{iso}}\|_{\mathrm{op}}\leq 2L^2 t$
+(trivial, from $\sum_{k=1}^t(1-[W^k]_{ii})\leq t$).
+\end{enumerate}
+The analogous bound for $\bm{b}_t^{(i)}-\bm{b}_t^{(i),\mathrm{iso}}$
+holds with $L^2$ replaced by $B_y L$.
+\end{lemma}
+
+\begin{proof}
+Unrolling the gossip recursion for the isolated comparison,
+\[
+A_t^{(i)}-A_t^{(i),\mathrm{iso}}
+=\underbrace{\sum_{\tau=1}^t([W^{t-\tau+1}]_{ii}-1)
+\bm{z}_\tau^{(i)}\bm{z}_\tau^{(i)\top}}_{\mathrm{(D1)}}
++\underbrace{\sum_{\tau=1}^t\sum_{j\neq i}[W^{t-\tau+1}]_{ij}
+\bm{z}_\tau^{(j)}\bm{z}_\tau^{(j)\top}}_{\mathrm{(D2)}}.
+\]
+
+\textit{Bounding (D1) and (D2).}
+Since $W$ is doubly stochastic and $[W^k]_{ij}\geq 0$,
+$\sum_{j\neq i}[W^k]_{ij}=1-[W^k]_{ii}$.
+Using $\|\bm{z}\bm{z}^\top\|_{\mathrm{op}}\leq L^2$,
+\[
+\|\mathrm{(D1)}\|_{\mathrm{op}}\leq L^2\sum_{k=1}^t(1-[W^k]_{ii}),
+\qquad
+\|\mathrm{(D2)}\|_{\mathrm{op}}\leq L^2\sum_{k=1}^t\sum_{j\neq i}[W^k]_{ij}
+=L^2\sum_{k=1}^t(1-[W^k]_{ii}).
+\]
+
+\textit{Spectral bound on $1-[W^k]_{ii}$ (valid for non-PSD $W$).}
+From the eigendecomposition $[W^k]_{ii}=1/N+\sum_{l\geq 2}\lambda_l^k v_{l,i}^2$
+and $\sum_{l\geq 2}v_{l,i}^2=1-1/N$,
+\[
+1-[W^k]_{ii}=\sum_{l\geq 2}(1-\lambda_l^k)v_{l,i}^2
+\leq\sum_{l\geq 2}k(1-\lambda_l)\,v_{l,i}^2
+\leq k\,\gamma_\dagger(W)\sum_{l\geq 2}v_{l,i}^2
+\leq k\,\gamma_\dagger(W),
+\]
+using the elementary inequality $1-\lambda^k\leq k(1-\lambda)$ for
+\emph{every} $\lambda\in[-1,1]$ (so no positivity of $\lambda_l$ is
+needed, and this is the per-$k$ step where a naive $1-\lambda_2^k$ bound
+would \emph{fail} at odd $k$ for a negative $\lambda_N$, cf.\
+Remark~\ref{rem:lazy}), and $1-\lambda_l\leq 1-\lambda_N=\gamma_\dagger(W)$.
+We deliberately use the bottom gap $\gamma_\dagger=1-\lambda_N$ rather
+than $\gamma=1-\lambda_2$. The eigenvector-weighted sum
+$\sum_{l\geq2}(\cdot)v_{l,i}^2$ can be dominated by \emph{any} non-top
+mode, so it is $1-\lambda_N$, not $1-\lambda_2$, that rigorously
+controls self-return.
+
+\textit{Summing.}
+$\sum_{k=1}^t(1-[W^k]_{ii})\leq\gamma_\dagger(W)\sum_{k=1}^t k
+\leq\gamma_\dagger(W)T^2/2$, which proves~\eqref{eq:leakage_exact}.
+
+\textit{Proof of part (a), constant leakage bound.}
+For $\gamma_\dagger(W)\leq c_0/T^2$,
+\[
+\|A_t^{(i)}-A_t^{(i),\mathrm{iso}}\|_{\mathrm{op}}
+\leq 2L^2\cdot\frac{\gamma_\dagger(W)T^2}{2}=L^2\gamma_\dagger(W)T^2\leq L^2 c_0.
+\]
+Since $\gamma_\dagger(W)\geq\gamma(W)$, the condition
+$\gamma_\dagger(W)\leq c_0/T^2$ is a (possibly strictly stronger)
+near-isolation condition than the spectral-gap condition
+$\gamma(W)\leq c_0/T^2$. The two coincide up to constants whenever the
+non-principal spectrum of $W$ is clustered near $\lambda_2$ (e.g.\ under
+Assumption~\ref{ass:lazy} for a graph that is uniformly weakly
+connected).
+\end{proof}
+
+\begin{remark}[Correct deep-subcritical threshold]
+The $1/T^2$ scaling of the threshold is correct for constant leakage.
+The key estimate $\sum_{k=1}^t(1-[W^k]_{ii})\leq\gamma_\dagger(W)T^2/2$
+is valid whenever $T^2\gamma_\dagger(W)\leq c_0$, with no stricter power
+of $T$ needed.  The one substantive correction relative to the earlier
+draft is that the controlling spectral quantity is the \emph{bottom}
+gap $\gamma_\dagger(W)=1-\lambda_N(W)=\|I-W\|_{\mathrm{op}}$, not the
+\emph{spectral} gap $\gamma(W)=1-\lambda_2(W)$.  Operationally one reads
+``$\gamma(W)\leq c_0/T^2$'' as the near-isolation condition
+``$\|I-W\|_{\mathrm{op}}\leq c_0/T^2$''. In the deeply subcritical
+(nearly disconnected, $W\approx I$) regime that motivates this lemma,
+the whole non-principal spectrum sits near $1$ and the two readings
+agree.
+\end{remark}
+
+\subsection{Subcritical Coupled Exploration Collapse}
+
+\begin{proposition}[Individual concentration]\label{prop:conc_ind}
+Under the single-agent forms of Assumptions~\ref{ass:reg}
+and~\ref{ass:margin}, and Assumption~\ref{ass:bias_ind},
+with probability $\geq 1-\delta/N$, for each $i$ and all $t\geq t_0$,
+in the $A_t^{(i),\mathrm{iso}}$-norm (note $A_t^{(i),\mathrm{iso}}\succeq t\sigma_{\min}I$,
+a $\Theta(t)$ scale, the single-agent case carrying no $N$ factor),
+\[
+\|\bm{\theta}_t^{(i),\mathrm{iso}}-(\bm{\theta}^{\!*}+\bm{\delta}_i)\|_{A_t^{(i),\mathrm{iso}}}
+\leq\beta_t^{(i)}
++O\!\left(B_\beta L\sqrt{\tfrac{\log(N/\delta)}{\sigma_{\min}}}\right)
++\frac{\lambda\|\bm{\theta}^{\!*}+\bm{\delta}_i\|}{\sqrt{t\sigma_{\min}}},
+\]
+where $\beta_t^{(i)}=\sigma\sqrt{d\log(1+tL^2/\lambda)+2\log(N/\delta)}$
+(matching the derivation, with the $2\log(N/\delta)$ confidence term
+separate from the volumetric term).  Equivalently, in the
+$\Sigma_z^{(i)}(\bm{\theta}_\infty^{(i)})$-norm every term is divided by
+$\sqrt t$ (the $A$-norm bias term is $\Theta(1)$ and persistent, exactly
+as in Proposition~\ref{prop:conc}, and it is the $\Sigma_z^{(i)}$-norm that
+vanishes).
+The $\Sigma_z^{(i)}$-norm right-hand side falls below
+$\gamma\sqrt{\sigma_{\min}}/(8L)$ for
+$t\geq t_{\mathrm{iso}}^*(\gamma)$, where
+\begin{equation}
+t_{\mathrm{iso}}^*(\gamma)\coloneqq
+\Theta\!\left(\frac{\sigma^2 dL^2\log(TN/\delta)+B_\beta^2 L^4\log(N/\delta)}
+{\gamma^2\sigma_{\min}^2}\right).
+\label{eq:tiso_star}
+\end{equation}
+\end{proposition}
+
+\begin{theorem}[Subcritical CEC, individual failure mode]
+\label{thm:cec_sub}
+Suppose $\gamma_\dagger(W)\leq c_0/T^2$ for an absolute constant $c_0$
+(Lemma~\ref{lem:leakage}(a)).
+Fix $\gamma>0$ with $\min_i\mu_i(\mathcal{X}_{\mathrm{dec},i}^\gamma)>0$,
+$\min_i\Delta_{\min,i}^\gamma>0$, and
+$\gamma\geq 8\alpha_{t_{\mathrm{iso}}^*}L/\sqrt{t_{\mathrm{iso}}^*\sigma_{\min}}$
+(no $N$ inside the root, the isolated design matrix being $\Theta(t)$).
+Under Assumptions~\ref{ass:reg}, \ref{ass:margin}, and~\ref{ass:bias_ind},
+naive cooperative LinUCB satisfies, with probability $\geq 1-\delta$, the bound
+\begin{equation}
+R_T^{\mathrm{net}}\geq\sum_{i=1}^N\Delta_{\min,i}^\gamma\,
+\mu_i(\mathcal{X}_{\mathrm{dec},i}^\gamma)\,(T-t_{\mathrm{iso}}^*(\gamma)).
+\label{eq:cec_sub}
+\end{equation}
+For $T\gg t_{\mathrm{iso}}^*(\gamma)$, $R_T^{\mathrm{net}}=\Omega(NT)$.
+\end{theorem}
+
+\begin{proof}
+\textit{Leakage bound.}
+Fix agent $i$.  By Lemma~\ref{lem:leakage}(a) with
+$\gamma_\dagger(W)\leq c_0/T^2$,
+for all $t\leq T$ we have
+$\|A_t^{(i)}-A_t^{(i),\mathrm{iso}}\|_{\mathrm{op}}\leq L^2 c_0$.
+
+\textit{Estimator proximity.}
+The resolvent identity gives
+$(A_t^{(i)})^{-1}-(A_t^{(i),\mathrm{iso}})^{-1}
+=(A_t^{(i)})^{-1}(A_t^{(i),\mathrm{iso}}-A_t^{(i)})(A_t^{(i),\mathrm{iso}})^{-1}$.
+Using $\|(A_t^{(i)})^{-1}\|_{\mathrm{op}},\|(A_t^{(i),\mathrm{iso}})^{-1}\|_{\mathrm{op}}
+\leq 1/(t\sigma_{\min})$,
+\[
+\|(A_t^{(i)})^{-1}-(A_t^{(i),\mathrm{iso}})^{-1}\|_{\mathrm{op}}
+\leq\frac{L^2 c_0}{(t\sigma_{\min})^2}.
+\]
+The analogous bound for $\bm{b}$ gives
+$\|\bm{b}_t^{(i)}-\bm{b}_t^{(i),\mathrm{iso}}\|\leq B_y L\,c_0$.
+Combining the two bounds,
+\[
+\|\widehat{\bm{\theta}}_t^{(i)}-\bm{\theta}_t^{(i),\mathrm{iso}}\|_{\Sigma_z^{(i)}}
+\leq\frac{CL^3(B_y+S)c_0}{t^2\sigma_{\min}^{3/2}},
+\]
+which for $t\geq t_{\mathrm{iso}}^*(\gamma)$ is $o(\gamma\sqrt{\sigma_{\min}}/L)$
+provided $T$ is large enough that
+$CL^3(B_y+S)c_0/(t_{\mathrm{iso}}^*)^2\sigma_{\min}^{3/2}
+\leq\gamma\sqrt{\sigma_{\min}}/(8L)$.\footnote{This gives a lower
+bound on $T$, namely $T\geq C'L^4(B_y+S)c_0\sqrt{T}/(\sigma_{\min}^2\gamma)$,
+i.e., $\sqrt{T}\geq C'L^4(B_y+S)c_0/(\sigma_{\min}^2\gamma)$,
+a mild condition satisfied for large $T$.}
+
+\textit{Proximity to individual fixed point.}
+By Proposition~\ref{prop:conc_ind} and the leakage bound,
+for $t\geq t_{\mathrm{iso}}^*(\gamma)$,
+\[
+\|\widehat{\bm{\theta}}_t^{(i)}-(\bm{\theta}^{\!*}+\bm{\delta}_i)\|_{\Sigma_z^{(i)}(\bm{\theta}_\infty^{(i)})}
+\leq\frac{\gamma\sqrt{\sigma_{\min}}}{4L}
+\]
+with probability $\geq 1-\delta/N$.
+
+\textit{Deterministic action selection.}
+Applying the Step~2 argument of Theorem~\ref{thm:cec}'s proof
+with $\widehat{\bm{\theta}}_t^{(i)}$ close to
+$\bm{\theta}^{\!*}+\bm{\delta}_i$ instead of $\bm{\theta}^{\!*}+\bm{\delta}$,
+agent $i$ selects $\tilde{a}_i(\bm{x}_t^{(i)})\neq\pi^{\!*}(\bm{x}_t^{(i)})$
+on $\mathcal{X}_{\mathrm{dec},i}^\gamma$.
+
+\textit{Regret accumulation.}
+\[
+R_T^{\mathrm{net}}
+\geq\sum_{i=1}^N\sum_{t=t_{\mathrm{iso}}^*+1}^T
+\mu_i(\mathcal{X}_{\mathrm{dec},i}^\gamma)\cdot\Delta_{\min,i}^\gamma.
+\]
+A union bound over $N$ agents gives overall probability $\geq 1-\delta$.
+\end{proof}
+
+\subsection{Unified Picture}
+
+\begin{corollary}[Naive cooperative LinUCB fails in both regimes]
+\label{cor:both}
+Under Assumptions~\ref{ass:reg}, \ref{ass:bias}, \ref{ass:smallbias},
+and~\ref{ass:bias_ind}, the following hold.
+\begin{itemize}
+\item \textbf{Supercritical,
+$\gamma(W)\gtrsim\sqrt N L^3(B_y+S)/(T\gamma\sigma_{\min}^{3/2})$
+and $\gamma^2\gtrsim\sigma^2 dL^2\log(T/\delta)/(T\sigma_{\min})$
+(eq.~\eqref{eq:phase}).}
+Theorem~\ref{thm:cec} (now unconditional under
+Assumption~\ref{ass:smallbias}) gives
+$R_T^{\mathrm{net}}\geq \tfrac12 N\mu_G(\mathcal{X}_{\mathrm{dec}}^\gamma)
+\Delta_{\min}^\gamma(T-t^\star(G,\gamma))$.
+\item \textbf{Subcritical, $\gamma_\dagger(W)\leq c_0/T^2$.}
+Theorem~\ref{thm:cec_sub} gives
+$R_T^{\mathrm{net}}\geq\sum_i\mu_i(\mathcal{X}_{\mathrm{dec},i}^\gamma)
+\Delta_{\min,i}^\gamma(T-t_{\mathrm{iso}}^*(\gamma))$
+(unconditional, since it uses the isolated-reference analysis, not
+the centralized tracking of Lemma~\ref{lem:tracking}).
+\end{itemize}
+Both are $\Omega(NT)$ for generic bias structures.  The two regimes
+produce different biased policies. The supercritical bias is the
+network-aggregate $\bm{\delta}$, while the subcritical bias is the
+agent-local $\bm{\delta}_i$.
+\end{corollary}
+
+\begin{remark}[Intermediate regime]
+Theorems~\ref{thm:cec} and~\ref{thm:cec_sub} cover the supercritical
+regime~\eqref{eq:phase} and the deep-subcritical regime
+$\gamma_\dagger(W)\leq c_0/T^2$ respectively.  The intermediate band is
+not covered by either. We conjecture continuous interpolation between
+the two bounds, but we do not prove it.
+\end{remark}
+
+
+%%============================================================
+\section{Decentralized CESA}\label{sec:dcesa}
+%%============================================================
+
+\subsection{Algorithm}\label{sec:dcesa_algo}
+
+Each agent $i$ maintains, for every $j\in\mathcal{N}(i)\cup\{i\}$,
+a trust function
+$w_{ij}(\bm{x},a)=\sigma(\langle\bm{\psi}_{ij},\phi(\bm{x},a)\rangle)$
+with $\bm{\psi}_{ij}\in\mathbb{R}^d$ learned online.
+Agent $i$ has private axiom access with per-round probability $p_i$.
+When an axiom event occurs at round $t$ for agent $j$, it reveals
+$z_t^{(j)}=\mathbb{1}[\langle\phi(\bm{x}_t^{(j)},a_t^{(j)}),
+\bm{\theta}^{\!*}\rangle\geq\epsilon_{\mathrm{tol}}]$.
+The trust-weighted cooperative update is
+\begin{align*}
+\widetilde{A}_t^{(i)}&=A_{t-1}^{(i)}+\bm{z}_t^{(i)}\bm{z}_t^{(i)\top},
+&\widetilde{\bm{b}}_t^{(i)}&=\bm{b}_{t-1}^{(i)}+y_t^{(i)}\bm{z}_t^{(i)},\\
+A_t^{(i)}&=\sum_j W_{ij}\,w_{ij}(\bm{x}_t^{(j)},a_t^{(j)})\,\widetilde{A}_t^{(j)},
+&\bm{b}_t^{(i)}&=\sum_j W_{ij}\,w_{ij}(\bm{x}_t^{(j)},a_t^{(j)})\,\widetilde{\bm{b}}_t^{(j)}.
+\end{align*}
+
+% [ADVISOR: MAS] Trust-floor: fix the support so the row-stochastic asymmetric mixing stays strongly connected and aperiodic.
+\begin{assumption}[Trust floor]\label{ass:trustfloor}
+The trust weights actually used satisfy
+$w_{ij}(\bm{x},a)\geq w_{\min}>0$ on every retained edge $(i,j)\in E$,
+with self-trust $w_{ii}\equiv 1$.  Write the row-normalized mixing matrix
+$P_t\coloneqq D_t^{-1}(\bm{w}^{(t)}\odot W)$, where $D_t$ is the diagonal
+row-sum normalizer. The matrix $P_t$ is row-stochastic and, by design,
+\emph{asymmetric}.  The floor fixes
+$\mathrm{support}(P_t)=\mathrm{support}(W)$ across $t$, so $P_t$ is
+strongly connected and aperiodic (the self-loops give aperiodicity).
+Let $\bm{\pi}_t>0$ denote its left Perron vector
+($\bm{\pi}_t^\top P_t=\bm{\pi}_t^\top$,
+$\mathbf 1^\top\bm{\pi}_t=1$) and set
+$\pi_{\min}\coloneqq\inf_t\min_i\pi_{t,i}$.  The floor gives
+$\pi_{\min}\geq c/N$ for a constant $c=c(w_{\min})$.  Aggressive trust
+pruning that drives a weight toward $0$ can, however, push $\pi_{\min}$
+\emph{below} $1/N$.
+\end{assumption}
+
+\subsection{Axiom Propagation}\label{sec:axiom_prop}
+
+At each round $t$, if agent $j$'s axiom fires, agent $j$ broadcasts
+$\xi_t^{(j)}=(\phi(\bm{x}_t^{(j)},a_t^{(j)}),z_t^{(j)},y_t^{(j)})$
+into a gossip buffer of depth $K\geq 1$.
+After $K$ gossip rounds, agent $i$ has received $\xi_t^{(j)}$ with
+probability proportional to $[W^K]_{ij}$.
+Agent $i$ then performs one online-gradient step on $\bm{\psi}_{ij}$,
+\[
+\bm{\psi}_{ij}\leftarrow\bm{\psi}_{ij}
+-\eta_t\nabla_{\bm{\psi}_{ij}}L_{\mathrm{CE}}\!\left(
+\sigma(\langle\bm{\psi}_{ij},\phi(\bm{x}_t^{(j)},a_t^{(j)})\rangle),
+\ell_t^{(i,j)}\right)
+\]
+with step-size $\eta_t=1/\sqrt{t}$ and $K=\lceil c/\gamma(W)\rceil$.
+
+The \emph{effective axiom rate} at agent $i$ is
+$p_t^{(i)}(K)\coloneqq\sum_{j\in V}[W^K]_{ij}p_j$,
+with network average $\bar{p}=N^{-1}\sum_i p_i$.
+
+\begin{lemma}[Effective axiom rate is network-uniform at mixing time]
+\label{lem:prop}
+For $K=\lceil c\log N/(1-\lambda_*(W))\rceil$ with $c\geq 1$
+(under Assumption~\ref{ass:lazy}, $1-\lambda_*=\gamma(W)$), for all $i\in V$,
+\[
+\bigl|p_t^{(i)}(K)-\bar{p}\bigr|
+\leq(N-1)\lambda_*(W)^K\leq N^{1-c}.
+\]
+For $c=2$, $|p_t^{(i)}(K)-\bar{p}|\leq 1/N$.
+\end{lemma}
+
+\begin{proof}
+By the spectral decomposition and Cauchy--Schwarz
+($\sum_{l\geq2}v_{l,i}^2\leq1$),
+$|[W^K]_{ij}-1/N|=|\sum_{l\geq2}\lambda_l^K v_{l,i}v_{l,j}|\leq\lambda_*(W)^K$,
+where the \emph{modulus} eigenvalue $\lambda_*=\max(|\lambda_2|,|\lambda_N|)$
+is needed since a negative $\lambda_N$ would otherwise break the per-$K$
+bound (Remark~\ref{rem:lazy}).  Hence
+\[
+\bigl|p_t^{(i)}(K)-\bar{p}\bigr|
+=\Bigl|\sum_j([W^K]_{ij}-1/N)p_j\Bigr|
+\leq(N-1)\lambda_*(W)^K.
+\]
+With $K=c\log N/(1-\lambda_*(W))$ we get
+$\lambda_*(W)^K\leq e^{-K(1-\lambda_*(W))}=e^{-c\log N}=N^{-c}$.
+\end{proof}
+
+\begin{lemma}[Trust-classifier mistake bound]\label{lem:trust_mistakes}
+Let $p^{(ij)}(K)=[W^K]_{ij}p_j$.  The expected cumulative
+margin-mistakes $M_T^{(ij)}$ satisfy the bound
+\[
+\mathbb{E}[M_T^{(ij)}]
+\leq\frac{C_1\sqrt{Td\log T}}{\Delta_0\sqrt{p^{(ij)}(K)}}
++\frac{C_2\log(1/\delta)}{\Delta_0^2\,p^{(ij)}(K)}.
+\]
+\end{lemma}
+
+\begin{proof}
+The argument has three parts. (1)~OGD regret on the labeled stream.
+(2)~Loss-to-margin conversion. (3)~Extrapolation to unlabeled rounds via Bernstein.
+
+\textit{Part 1.}  With $S_T^{(ij)}$ labeled rounds, the OGD
+regret bound (Hazan~2016, Theorem~3.1) gives
+$\sum_{s=1}^{S_T^{(ij)}}\ell(\bm{\psi}_{ij}^{(s)};\cdot)
+\leq D_\psi L\sqrt{S_T^{(ij)}}$
+under the realizability assumption.
+
+\textit{Part 2.}  A margin-mistake $E_s$ implies
+$\ell(\bm{\psi}_{ij}^{(s)};\cdot)\geq\Delta_0$, so the count of
+labeled margin-mistakes is $\leq D_\psi L\sqrt{S_T^{(ij)}}/\Delta_0$.
+
+\textit{Part 3.}  The unlabeled-mistake expected count is bounded by
+$D_\psi L\sqrt{T}/(\Delta_0\sqrt{p^{(ij)}(K)})$ via online-to-batch
+conversion.  Bernstein's inequality (Boucheron--Lugosi--Massart~2013,
+Theorem~2.10) then gives the stated high-probability bound.
+The $\sqrt{d\log T}$ factor arises from a covering-number
+argument over the classifier space.
+\end{proof}
+
+\subsection{D-CESA Regret Bound}\label{sec:dcesa_regret}
+
+% [ADVISOR: MAS] Re-derive the gossip error for the asymmetric row-stochastic trust mixing via Dobrushin's coefficient (no symmetry, no reversibility).
+\begin{lemma}[D-CESA gossip error, asymmetric trust mixing]\label{lem:gossip_dcesa}
+Adopt Assumption~\ref{ass:trustfloor}.  Let
+$\Phi(t{:}\tau)\coloneqq P_t P_{t-1}\cdots P_{\tau+1}$ be the backward
+product of the row-stochastic trust matrices and let
+$\tau_1(P)=\tfrac12\max_{i,k}\sum_j|P_{ij}-P_{kj}|\in[0,1]$ be
+Dobrushin's ergodicity coefficient.  The trust floor makes the chain
+uniformly ergodic over the fixed strongly-connected aperiodic support, so
+there are a constant $C_0$ and an effective per-step rate
+$\bar\tau<1$ for which the backward products contract (Hajnal).  When no
+single step is scrambling, $\bar\tau$ is the geometric rate of the
+diameter-length product.  Define the Perron-weighted centralized
+statistic
+\[
+A_t^{\mathrm{cen},\pi}\coloneqq\lambda I+\sum_{\tau=1}^t\sum_{j=1}^N
+\pi_{\tau,j}\,\bm{z}_\tau^{(j)}\bm{z}_\tau^{(j)\top},
+\qquad
+\bm{b}_t^{\mathrm{cen},\pi}\coloneqq\sum_{\tau=1}^t\sum_{j=1}^N
+\pi_{\tau,j}\,y_\tau^{(j)}\bm{z}_\tau^{(j)} .
+\]
+Then for every agent $i$ and all $1\leq\tau\leq t$,
+\[
+\sum_{j=1}^N\bigl|[\Phi(t{:}\tau)]_{ij}-\pi_{\tau,j}\bigr|
+\leq C_0\,\bar\tau^{\,t-\tau},
+\qquad
+\|A_t^{(i)}-A_t^{\mathrm{cen},\pi}\|_{\mathrm{op}}
+\leq\frac{C_0\,\sqrt{1/\pi_{\min}}\;L^2}{1-\bar\tau},
+\]
+with the analogous $\bm{b}$ bound under $L^2\to B_y L$.  Under a symmetric
+doubly stochastic $W$ with no trust, $\bm{\pi}_t\equiv\mathbf 1/N$,
+the quantity $1-\bar\tau$ is of the order of the spectral gap
+$\gamma(W)$, and $\sqrt{1/\pi_{\min}}=\sqrt N$, recovering
+Lemma~\ref{lem:gossip}.
+\end{lemma}
+
+\begin{proof}
+\emph{Ergodic contraction (Hajnal / Dobrushin).}  For row-stochastic
+matrices the ergodicity coefficient is submultiplicative,
+$\tau_1(PQ)\leq\tau_1(P)\tau_1(Q)$, and contracts the $\ell_1$ distance
+of distributions, $\|\bm\mu^\top P-\bm\nu^\top P\|_1\leq\tau_1(P)\|\bm\mu-\bm\nu\|_1$.
+Applying this to the rows of the backward product against the stationary
+$\bm\pi_\tau$ of the step that injected the data at time $\tau$, and
+using uniform ergodicity of the trust chain (Hajnal), the row deviations
+contract geometrically,
+\[
+\sum_j\bigl|[\Phi(t{:}\tau)]_{ij}-\pi_{\tau,j}\bigr|
+\leq C_0\,\bar\tau^{\,t-\tau},
+\qquad \bar\tau<1 .
+\]
+A single step need not be scrambling, so $\tau_1(P_t)$ can equal $1$ for
+an individual $t$.  The fixed strongly-connected aperiodic support of
+Assumption~\ref{ass:trustfloor} nonetheless makes the product over any
+window of the diameter length a strict contraction, which is what
+delivers $\bar\tau<1$ and the constant $C_0$.  No symmetry or
+reversibility is used. This is the asymmetric-gossip toolkit of
+Dubey--Pentland (2020).
+
+\emph{Operator-norm propagation.}  Unrolling the trust-weighted update in
+its row-normalized form gives
+$A_t^{(i)}-A_t^{\mathrm{cen},\pi}
+=\sum_{\tau=1}^t\sum_j([\Phi(t{:}\tau)]_{ij}-\pi_{\tau,j})
+\bm{z}_\tau^{(j)}\bm{z}_\tau^{(j)\top}$.
+The triangle inequality and $\|\bm z\bm z^\top\|_{\mathrm{op}}\leq L^2$
+reduce the bound to the row deviations above, and the geometric sum gives
+the dimension-free $\sum_\tau C_0\bar\tau^{t-\tau}\leq C_0/(1-\bar\tau)$.
+Since $\sqrt{1/\pi_{\min}}\geq 1$, the dimension-free constant
+$C_0/(1-\bar\tau)$ is dominated by
+$C_0\sqrt{1/\pi_{\min}}/(1-\bar\tau)$.  We state the latter because it is
+the direct analog of the stationary-mass factor
+$\sqrt{(1-\pi_i)/\pi_i}=\sqrt{N-1}$ of Lemma~\ref{lem:gossip}, and
+because, once the Perron-weighted reference is used, $\pi_{\min}$ is the
+quantity that genuinely controls the worst case under aggressive trust
+pruning (where $\pi_{\min}<1/N$ and $\sqrt{1/\pi_{\min}}>\sqrt N$).  On
+the trust-pruned subgraph of retained edges only, the sharper
+dimension-free $C_0 L^2/(1-\bar\tau)$ applies.  The $\bm b$ bound is
+identical with $L^2\to B_y L$.
+\end{proof}
+
+\begin{theorem}[D-CESA network regret with axiom propagation]
+\label{thm:dcesa}
+Under Assumption~\ref{ass:reg}, assuming $\mathcal{H}_{\mathrm{trust}}$
+realizes the $\epsilon_{\mathrm{tol}}$-indicator for each neighbor,
+and using $K=\lceil c\log N/\gamma(W)\rceil$ with $c\geq 2$, we have
+\begin{equation}
+R_T^{\mathrm{net}}\leq
+\underbrace{\widetilde{O}\!\left(|E|\sqrt{\frac{Td}{\bar{p}}}\right)}_{(i)\text{ epistemic}}
++\underbrace{\widetilde{O}\!\left(d\sqrt{NT}\right)}_{(ii)\text{ cooperative bandit}}
++\underbrace{\widetilde{O}\!\left(\frac{\sqrt{1/\pi_{\min}}\;d\sqrt{T}}{1-\bar\tau}\right)}_{(iii)\text{ gossip error}}
++\underbrace{\epsilon_{\mathrm{tol}}\,NT}_{(iv)\text{ tolerance}}.
+\label{eq:dcesa}
+\end{equation}
+Term~(i) depends on the network-average rate $\bar{p}$, not $\min_i p_i$.
+% [ADVISOR: MAS] Term (iii) re-derived for the asymmetric row-stochastic trust mixing.
+Term~(iii) is stated for the implemented \emph{asymmetric}
+row-stochastic trust mixing $P_t=D_t^{-1}(\bm w^{(t)}\odot W)$ via
+Lemma~\ref{lem:gossip_dcesa}. The spectral gap $\gamma(W)$ is replaced by
+$1-\bar\tau$ (Dobrushin) and the $\sqrt N$ by $\sqrt{1/\pi_{\min}}$.
+Symmetrizing $W$ would destroy the trust mechanism, so the asymmetric
+bound is the relevant one.  Under a symmetric $W$ it reduces to the
+$\sqrt N\,d\sqrt T/\gamma(W)$ form of Lemma~\ref{lem:gossip}
+(Remark~\ref{rem:sqrtN}).
+\end{theorem}
+
+\begin{proof}
+Decompose $R_T^{\mathrm{net}}$ into trust-mistake rounds (I),
+gossip-error rounds (III), and clean rounds (II+IV).
+
+\textit{Term (I).}
+On trust-mistake rounds, per-round regret is at most 1.
+Lemma~\ref{lem:trust_mistakes} summed over edges, combined with
+Lemma~\ref{lem:prop} (giving $p^{(ij)}(K)\geq\bar{p}/2$ for $N\geq 2$),
+yields $(\mathrm{I})\leq\widetilde{O}(|E|\sqrt{Td/\bar{p}})$.
+
+\textit{Term (II+IV).}
+On clean rounds, the trust-weighted centralized estimator satisfies
+a weighted analog of Lemma~\ref{lem:mart} (with
+$\bm{\xi}_s=\sqrt{w_{ij}/N}\,\bm{z}_s$, preserving the
+Abbasi-Yadkori martingale hypotheses since weights $w_{ij}$ are
+$\mathcal{G}_{s-1}$-measurable and $\epsilon_s$ remains
+$\sigma$-sub-Gaussian).  The resulting concentration bound gives
+$\alpha_t^w\leq\alpha_t$.  Following the LinUCB regret analysis with
+the elliptical potential lemma and Cauchy--Schwarz,
+$(\mathrm{II+IV})\leq\widetilde{O}(d\sqrt{NT})+\epsilon_{\mathrm{tol}}NLT$.
+
+\textit{Term (III).}
+For the asymmetric trust mixing the gossip deviation is controlled by
+Lemma~\ref{lem:gossip_dcesa} against the Perron-weighted reference,
+$\|A_t^{(i)}-A_t^{\mathrm{cen},\pi}\|_{\mathrm{op}}
+\leq\sqrt{1/\pi_{\min}}\,L^2/(1-\bar\tau)$.
+Propagating through the resolvent identity and summing over $T$ rounds
+gives $(\mathrm{III})\leq\widetilde{O}\!\bigl(\sqrt{1/\pi_{\min}}\,
+d\sqrt{T}/(1-\bar\tau)\bigr)$.  Under a symmetric $W$ this is the
+$\widetilde O(d\sqrt{NT}/\gamma(W))$ of the earlier draft.
+\end{proof}
+
+% [ADVISOR: bandits] Honest empirical claim: constant-factor reduction, not empirically sublinear sqrt(T).
+\begin{remark}[What the $\sqrt T$ term does and does not promise]\label{rem:dcesa_empirical}
+The $\widetilde O(d\sqrt{NT})$ cooperative term~(ii)
+in~\eqref{eq:dcesa} is a valid \emph{upper} bound. It is not a claim that
+observed D-CESA regret is empirically sublinear in $T$.  Trust prunes
+biased \emph{neighbors}. It does not remove an agent's \emph{own} bias
+$\beta^{(i)}$.  On the self-biased adversarial instance, where every
+agent carries bias, the tolerance and own-bias term~(iv)
+$\epsilon_{\mathrm{tol}}NT$ dominates and the measured regret is
+asymptotically \emph{linear} in $T$, with a smaller constant than naive
+cooperation (roughly a threefold reduction over the naive $O(NT)$ rate).
+The honest empirical statement is a constant-factor improvement, not a
+rate improvement.  The $\sqrt T$ behavior is realized only on instances
+admitting a reliable-agent subset, where trust can recover the unbiased
+$\bm{\theta}^{\!*}$ rather than merely a less-biased mixture.
+\end{remark}
+
+
+%%============================================================
+\section{Lower Bounds for D-CESA}\label{sec:dcesa_lower}
+%%============================================================
+
+Lower bounds are stated against any cooperative bandit algorithm
+with heterogeneous axiom access. They are information-theoretic.
+
+\subsection{Lower Bound for the Epistemic Term (i)}
+
+\begin{assumption}[Soft / noisy certification channel]\label{ass:softcert}
+The certification observed on an axiom-fired round is a \emph{noisy}
+label. Instead of the deterministic indicator
+$\mathbb{1}[\langle\phi,\bm{\theta}^{\!*}\rangle\geq\epsilon_{\mathrm{tol}}]$,
+the learner observes $z=\langle\phi,\bm{\theta}^{\!*}\rangle+\zeta$ with
+$\zeta$ independent, zero-mean, $\sigma_z$-sub-Gaussian (equivalently a
+logistic/Bernoulli soft label with margin scale $\sigma_z$).  This is
+consistent with the \emph{learned} soft trust classifier of
+Section~\ref{sec:dcesa_algo}, whose output is a probability, not a hard
+bit.
+\end{assumption}
+
+\begin{theorem}[Epistemic lower bound, conditional on
+Assumption~\ref{ass:softcert}]\label{thm:lower_epistemic}
+Under Assumption~\ref{ass:softcert} there exists a family of problem
+instances on which any algorithm $\mathcal{A}$ with heterogeneous axiom
+access $(p_i)_{i\in V}$ and effective network rate $\bar{p}$ incurs
+\[
+\mathbb{E}[R_T^{\mathrm{net}}]\geq\Omega\!\left(\sigma_z|E|\sqrt{Td/\bar{p}}\,\right).
+\]
+Without Assumption~\ref{ass:softcert} (i.e.\ for the noiseless
+deterministic axiom of Section~\ref{sec:dcesa_algo}), only the weaker
+waiting-time bound $\mathbb{E}[R_T^{\mathrm{net}}]\geq\Omega(|E|\,\Delta_{\mathrm{gap}}/\bar p)$
+holds (Remark~\ref{rem:epi_downgrade}).
+\end{theorem}
+
+\begin{proof}
+The construction is rebuilt to repair two defects of an earlier
+version. Defect (a), it used $\bm{\theta}^{\!*}=0$, which makes
+$R_T^{\mathrm{net}}\equiv 0$ and lower-bounds nothing. Defect (b), it
+claimed zero KL on non-axiom rounds even though the signed reward
+$y=\langle\phi,\bm{\theta}^{\!*}\rangle+\beta+\eta$ has a
+\emph{bias-dependent mean}, so raw feedback \emph{does} leak the
+discriminating direction.  We fix both by making the bias exactly
+cancel the reward gap, so reward is genuinely uninformative, while
+$\bm{\theta}^{\!*}\neq 0$ produces real latent regret.
+
+\textit{Step 1 (construction with $\bm{\theta}^{\!*}\neq 0$ and reward
+cancellation).}
+Fix a directed edge $(i,j)$ and a coordinate $e_k$.  Two actions
+$a_+,a_-$ have fixed features $\phi(\bm{x},a_\pm)=\pm e_k$.  In instance
+$(k,s)$, $s\in\{+,-\}$, set
+$\bm{\theta}^{\!*}_{(k,s)}=s\,\Delta\,e_k$, so under $s=+$ action $a_+$
+is truly optimal (latent value $+\Delta$ vs $-\Delta$) and under $s=-$
+action $a_-$ is.  Choose the bias to cancel the latent reward, setting
+$\beta^{(j)}_{(k,s)}(\bm{x},a)=-\langle\phi(\bm{x},a),\bm{\theta}^{\!*}_{(k,s)}\rangle$,
+so the \emph{observed} reward mean
+$\langle\phi(\bm{x},a),\bm{\theta}^{\!*}_{(k,s)}\rangle
++\beta^{(j)}_{(k,s)}(\bm{x},a)\equiv 0$
+for every action and every $s$ (and $|\beta|\leq\Delta\leq B_\beta$).
+
+\textit{Step 2 (reward is exactly uninformative).}
+By Step~1 the reward is $y=0+\eta$, with law $N(0,\sigma^2)$ (or the
+common sub-Gaussian law) \emph{identical} across actions and across
+$s\in\{+,-\}$.  Hence the per-round KL contributed by the reward
+channel is genuinely zero, with
+$\mathrm{KL}(\mathbb{P}_{(k,+)}^{\mathrm{reward}}\|
+\mathbb{P}_{(k,-)}^{\mathrm{reward}})=0$ on every round, axiom or not.
+This is now a \emph{correct} statement (it was false in the earlier
+version, where the bias entered the reward mean).
+
+\textit{Step 3 (KL from the noisy axiom channel).}
+By Assumption~\ref{ass:softcert}, on an axiom round at agent $j$ the
+learner observes $z=\langle\phi(\bm{x},a),\bm{\theta}^{\!*}_{(k,s)}\rangle+\zeta
+=s\,\Delta\,\langle\phi(\bm{x},a),e_k\rangle+\zeta$.  For action $a_+$
+the mean of $z$ is $+s\Delta$, so the two hypotheses differ in the
+axiom-channel mean by $2\Delta$, giving per-axiom-round KL
+$\leq 2\Delta^2/\sigma_z^2$.  Effective axiom rate at agent $i$,
+summed over sources $j$, is $\bar p$ per round
+(Lemma~\ref{lem:prop}).  By the KL chain rule over the $\approx T\bar p$
+axiom rounds,
+\[
+\mathrm{KL}(\mathbb{P}_{(k,+)}^T\|\mathbb{P}_{(k,-)}^T)
+=\underbrace{0}_{\text{reward}}+\underbrace{C_{\mathrm{KL}}\,\frac{\Delta^2}{\sigma_z^2}\,T\bar p}_{\text{axiom}}.
+\]
+The factor $\bar p$ (not $N$) is now legitimate. The reward channel
+contributes exactly $0$ (Step~2), so \emph{only} axiom rounds carry
+information, and their total rate per round is $\bar p$.
+
+\textit{Step 4 (Le Cam).}  Distinguishing the two hypotheses with
+probability $\geq 3/4$ requires (Pinsker) $\mathrm{KL}\geq c_0$, i.e.\
+$\Delta\geq c\,\sigma_z/\sqrt{T\bar p}$.  Since reward gives no signal,
+any algorithm that has not distinguished them pulls the wrong action a
+constant fraction of the $T$ rounds, incurring expected latent regret
+$\Omega(\Delta T)$ on at least one of the pair. Optimizing
+$\Delta\asymp\sigma_z/\sqrt{T\bar p}$ gives $\Omega(\sigma_z\sqrt{T/\bar p})$
+per edge.
+
+\textit{Step 5 (Assouad over $d$ coordinates).}
+Embedding $d$ orthogonal coordinate constructions and applying
+Assouad's lemma yields $\Omega(\sigma_z\sqrt{Td/\bar p})$ per directed
+edge.
+
+\textit{Step 6 (summing over edges).}
+The per-edge action subsets $\mathcal{A}_{(i,j)}$ are disjoint, so the
+sub-problems are independent and the regrets add, giving
+$\mathbb{E}[R_T^{\mathrm{net}}]\geq\Omega(\sigma_z|E|\sqrt{Td/\bar p})$.
+\qedhere
+\end{proof}
+
+\begin{remark}[Why a noise assumption is needed, and the noiseless
+downgrade]\label{rem:epi_downgrade}
+The $\sqrt{\,\cdot\,}$ rate is an estimation rate and \emph{requires} a
+noisy discriminating channel.  Under the literal noiseless axiom
+$z=\mathbb{1}[\langle\phi,\bm{\theta}^{\!*}\rangle\geq\epsilon_{\mathrm{tol}}]$
+of Section~\ref{sec:dcesa_algo}, a single axiom observation of $a_+$
+reveals $s$ \emph{exactly}. Identification then costs only the
+geometric waiting time $\Theta(1/\bar p)$ for the first axiom, giving
+the weaker bound $\Omega(|E|\,\Delta_{\mathrm{gap}}/\bar p)$ (no
+$\sqrt{T}$, no $\sqrt d$ from repeated estimation).
+Assumption~\ref{ass:softcert} is what converts the problem into a
+genuine estimation problem with the $\sqrt{Td/\bar p}$ rate.  We do not
+claim the unconditional $\sqrt{Td/\bar p}$ lower bound for the
+deterministic-axiom model. Closing this gap (matching the
+upper bound term~(i) for the hard-label model) is left \emph{open}.
+% [ADVISOR: bandits] State which regime the experiment validates.
+The implemented system uses deterministic axioms, so its measured
+epistemic cost is governed by the waiting-time bound
+$\Omega(|E|\Delta_{\mathrm{gap}}/\bar p)$, a slope-$1$ dependence on
+$1/\bar p$, which the experiment reproduces.  The $\sqrt{Td/\bar p}$ rate
+(slope $\tfrac12$) belongs to the soft-certification regime of
+Assumption~\ref{ass:softcert} and is \emph{not} claimed to be
+empirically validated.
+\end{remark}
+
+\begin{remark}[Tightness, partial]\label{rem:epi_tight}
+Term~(i) of Theorem~\ref{thm:dcesa} is
+$\widetilde{O}(|E|\sqrt{Td/\bar{p}})$.  Under
+Assumption~\ref{ass:softcert} (soft labels, the regime in which the
+trust \emph{classifier} of Section~\ref{sec:dcesa} actually operates),
+Theorem~\ref{thm:lower_epistemic} matches it up to the $\sigma_z$ scale
+and logarithmic factors, so the $\bar p$-dependence is necessary
+\emph{in that regime}.  For the hard-label model the matching lower
+bound is open (Remark~\ref{rem:epi_downgrade}). The summary table marks
+term~(i) tightness accordingly.
+\end{remark}
+
+\subsection{Lower Bound for the Cooperative Bandit Term (ii)}
+
+\begin{theorem}[Cooperative bandit lower bound]\label{thm:lower_coop}
+There exists a family of linear cooperative bandit instances
+(no bias, no trust learning) on which any cooperative algorithm
+$\mathcal{A}$ satisfies the bound
+\[
+\mathbb{E}[R_T^{\mathrm{net}}]\geq\Omega(d\sqrt{NT}).
+\]
+\end{theorem}
+
+\begin{proof}
+Set $\beta^{(i)}=0$ and $p_i=1$.  The problem reduces to cooperative
+LinUCB with unbiased feedback.  The $\Omega(d\sqrt{NT})$ lower bound
+for network regret follows from Dubey--Pentland (2020, Theorem~2)
+adapted to linear bandits.
+\end{proof}
+
+\subsection{Lower Bound for the Tolerance Term (iv)}
+
+\begin{theorem}[Tolerance lower bound]\label{thm:lower_tol}
+If trust certifications are $\epsilon_{\mathrm{tol}}$-slack, then
+\[
+\mathbb{E}[R_T^{\mathrm{net}}]\geq\Omega(\epsilon_{\mathrm{tol}}\,NT).
+\]
+\end{theorem}
+
+\begin{proof}
+Let $\beta^{(i)}(\bm{x},a)=\epsilon_{\mathrm{tol}}
+\cdot\mathrm{sign}(\langle\phi(\bm{x},a),\bm{\delta}_0\rangle)$
+for a fixed unit vector $\bm{\delta}_0$.
+Any $\epsilon_{\mathrm{tol}}$-trust function accepts all this data.
+The $\gamma$-decoupling argument (Theorem~\ref{thm:cec} with
+$\gamma=0$, $\bm{\delta}=\epsilon_{\mathrm{tol}}\bm{\delta}_0$)
+gives instantaneous latent regret $\Omega(\epsilon_{\mathrm{tol}})$
+per round per agent, summing to $\Omega(\epsilon_{\mathrm{tol}}NT)$.
+\end{proof}
+
+\subsection{The Gossip-Error Term (iii), an Open Question}
+
+% [ADVISOR: MAS] Conjecture restated for the Dobrushin / Perron quantities.
+\begin{conjecture}[Gossip term refinement]\label{conj:gossip}
+Term~(iii) of Theorem~\ref{thm:dcesa},
+$\widetilde{O}(\sqrt{1/\pi_{\min}}\,d\sqrt T/(1-\bar\tau))$, is not tight.
+A sharper analysis should improve the $1/(1-\bar\tau)$ to
+$1/\sqrt{1-\bar\tau}$, yielding
+$\widetilde{O}(\sqrt{1/\pi_{\min}}\,d\sqrt{T/(1-\bar\tau)})$.  The
+stationary-mass prefactor $\sqrt{1/\pi_{\min}}$, by contrast, is genuine
+(Lemma~\ref{lem:gossip_dcesa}).  Under symmetry it equals $\sqrt N$.
+\end{conjecture}
+
+\subsection{Summary}
+
+\begin{center}
+\begin{tabular}{lccc}
+\hline
+Term & Upper bound & Lower bound & Tight?\\
+\hline
+(i) Epistemic & $|E|\sqrt{Td/\bar{p}}$ &
+$|E|\Delta_{\mathrm{gap}}/\bar p$ hard, $|E|\sqrt{Td/\bar{p}}$ soft (Thm.~\ref{thm:lower_epistemic}) &
+soft cond., hard open\\
+(ii) Cooperative bandit & $d\sqrt{NT}$ &
+$d\sqrt{NT}$ (Thm.~\ref{thm:lower_coop}) & $\checkmark$\\
+(iii) Gossip error & $\sqrt{1/\pi_{\min}}\,d\sqrt T/(1-\bar\tau)$ & open &
+open (Conj.~\ref{conj:gossip})\\
+(iv) Tolerance & $\epsilon_{\mathrm{tol}}NT$ &
+$\epsilon_{\mathrm{tol}}NT$ (Thm.~\ref{thm:lower_tol}) & $\checkmark$\\
+\hline
+\end{tabular}
+\end{center}
+
+%%============================================================
+\section{Remaining Caveats}\label{sec:caveats}
+%%============================================================
+
+% [ADVISOR: bandits] C1 is now largely closed by the Gronwall lift; only confinement remains.
+\textbf{(C1) From population contraction to trajectory convergence
+(now largely closed).}
+Lemma~\ref{lem:fp} gives existence and Lemma~\ref{lem:contraction}
+uniqueness with geometric \emph{population} convergence under
+$\kappa<1$~\eqref{eq:kappa}.  Lemma~\ref{lem:tracking} now lifts this to
+the stochastic recursive-least-squares trajectory. The
+persistent-excitation floor and the bias bound combine into a discrete
+Gronwall inequality that yields $E_t=\widetilde O(\sqrt t)$ under the
+small-bias condition $b<\tfrac12$ (Assumption~\ref{ass:smallbias}),
+which lies in the same family as $\kappa<1$.  Theorem~\ref{thm:cec} is
+therefore \emph{unconditional} on that condition and no longer assumes a
+tracking rate.  The single residual gap is confinement. We take the
+centralized trajectory to remain in $B_R$, a standard
+regularized-least-squares stability property, rather than deriving it.
+Establishing that confinement from first principles is the remaining
+open item, and it is strictly weaker than the rate hypothesis it
+replaces.  The subcritical Theorem~\ref{thm:cec_sub} needs neither,
+using the isolated-reference analysis directly.
+
+\textbf{(C6) Epistemic lower bound, hard-label case open.}
+Theorem~\ref{thm:lower_epistemic} establishes
+$\Omega(|E|\sqrt{Td/\bar p})$ only under the soft-certification
+Assumption~\ref{ass:softcert}.  For the noiseless deterministic axiom
+of Section~\ref{sec:dcesa_algo}, only the weaker waiting-time bound
+$\Omega(|E|\Delta_{\mathrm{gap}}/\bar p)$ is proved
+(Remark~\ref{rem:epi_downgrade}). The matching $\sqrt{Td/\bar p}$
+lower bound for hard labels is open.  Accordingly the earlier
+``$\checkmark$ tight'' claim for term~(i) has been withdrawn.
+
+% [ADVISOR: MAS] C2 is now realized by Lemma~\ref{lem:gossip_dcesa}.
+\textbf{(C2) Asymmetric / trust-weighted $W$.}
+The implemented D-CESA mixing $P_t=D_t^{-1}(\bm w^{(t)}\odot W)$ is
+row-stochastic and asymmetric.  Lemma~\ref{lem:gossip_dcesa} carries out
+the program previously only sketched here.  The centralized reference
+becomes the Perron-weighted statistic $A_t^{\mathrm{cen},\pi}$ (with
+$\bar{\bm u}$ replaced by $\sum_i\pi_i\bm u_i$ for the left Perron vector
+$\bm\pi$), the spectral TV bound is replaced by Dobrushin's coefficient,
+and term~(iii) reads
+$\widetilde O(\sqrt{1/\pi_{\min}}\,d\sqrt T/(1-\bar\tau))$.
+
+\textbf{(C3) Intermediate regime.}
+The regime $c_0/T^2<\gamma(W)<c/T$ is not covered. We conjecture
+continuous interpolation from individual bias $\bm{\delta}_i$ to
+network bias $\bm{\delta}$ as connectivity increases.
+
+% [ADVISOR: MAS] C4 restated for the Dobrushin / Perron quantities.
+\textbf{(C4) Gossip term tightness.}
+Conjecture~\ref{conj:gossip} states that term~(iii) of
+Theorem~\ref{thm:dcesa},
+$\widetilde{O}(\sqrt{1/\pi_{\min}}\,d\sqrt T/(1-\bar\tau))$, is improvable
+to $\widetilde{O}(\sqrt{1/\pi_{\min}}\,d\sqrt{T/(1-\bar\tau)})$.
+Adapting the self-normalized martingale argument of
+Dubey--Pentland (2020) to the asymmetric trust-weighted setting
+would resolve this.  The stationary-mass prefactor $\sqrt{1/\pi_{\min}}$
+is not expected to be removable.
+
+\textbf{(C5) Propagation breakdown.}
+When $K=\log N/\gamma(W)$ exceeds the horizon $T$,
+Lemma~\ref{lem:prop}'s equalization of axiom rates fails,
+and term~(i) of Theorem~\ref{thm:dcesa} reverts to
+$\widetilde{O}(|E|\sqrt{Td/\min_i p_i})$.
+A two-regime picture for the D-CESA upper bound is left for
+future work.
+
+\begin{thebibliography}{9}
+\bibitem{abbasi2011}
+Y.~Abbasi-Yadkori, D.~P\'al, C.~Szepesv\'ari.
+\textit{Improved algorithms for linear stochastic bandits.}
+NeurIPS, 2011.
+
+\bibitem{dubey2020}
+A.~Dubey, A.~Pentland.
+\textit{Cooperative multi-agent bandits with heavy tails.}
+ICML, 2020.
+
+\bibitem{martinez2019}
+D.~Mart\'inez-Rubio, V.~Kanade, P.~Rebeschini.
+\textit{Decentralized cooperative stochastic bandits.}
+NeurIPS, 2019.
+
+\bibitem{koloskova2020}
+A.~Koloskova, N.~Loizou, S.~Boreiri, M.~Jaggi, S.U.~Stich.
+\textit{A unified theory of decentralized SGD with changing topology
+and local updates.}
+ICML, 2020.
+
+\bibitem{ghasemi2026}
+M.~Ghasemi, M.~Crowley.
+\textit{Learning When to Trust in Contextual Social Bandits.}
+Preprint, 2026.
+\end{thebibliography}
+
+\end{document}

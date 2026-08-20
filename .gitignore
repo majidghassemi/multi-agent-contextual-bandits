@@ -219,3 +219,9 @@ __marimo__/
 
 
 *.json
+# --- Reproducibility (X2) ---------------------------------------------------
+# The blanket *.json rule above silently excluded every experiment output,
+# which is why the repo shipped figures with no numbers behind them.
+# Experiment results are the record of record and must be committed.
+!results/*.json
+!**/results/*.json

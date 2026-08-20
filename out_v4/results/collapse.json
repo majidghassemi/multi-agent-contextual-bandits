@@ -1,0 +1,69 @@
+{
+ "per_N": {
+  "2": {
+   "err_T": 0.03159782390707974,
+   "err_T_sem": 0.0014532562988138233,
+   "t_est": 250,
+   "t_behav": null,
+   "behav_frac_final": 0.884023879170938,
+   "behav_censored": true,
+   "bonus_T": 0.784686533352625,
+   "gamma_over_3": 0.0033333333333333335,
+   "reg_mean": 40.1059517834234
+  },
+  "4": {
+   "err_T": 0.021839032017727023,
+   "err_T_sem": 0.0011185585792916623,
+   "t_est": 250,
+   "t_behav": null,
+   "behav_frac_final": 0.9026530752641266,
+   "behav_censored": true,
+   "bonus_T": 0.784686533352625,
+   "gamma_over_3": 0.0033333333333333335,
+   "reg_mean": 59.98892993827828
+  },
+  "8": {
+   "err_T": 0.01342063409872877,
+   "err_T_sem": 0.001519132140622632,
+   "t_est": 250,
+   "t_behav": 11750,
+   "behav_frac_final": 0.9314248025403158,
+   "behav_censored": false,
+   "bonus_T": 0.784686533352625,
+   "gamma_over_3": 0.0033333333333333335,
+   "reg_mean": 107.79403689971201
+  },
+  "16": {
+   "err_T": 0.009669538073284271,
+   "err_T_sem": 0.0004885239730410884,
+   "t_est": 250,
+   "t_behav": 11250,
+   "behav_frac_final": 0.9443138464956545,
+   "behav_censored": false,
+   "bonus_T": 0.784686533352625,
+   "gamma_over_3": 0.0033333333333333335,
+   "reg_mean": 200.2507897388334
+  },
+  "32": {
+   "err_T": 0.008185273727327263,
+   "err_T_sem": 0.0007102777991704448,
+   "t_est": 250,
+   "t_behav": 7750,
+   "behav_frac_final": 0.9496125677386935,
+   "behav_censored": false,
+   "bonus_T": 0.784686533352625,
+   "gamma_over_3": 0.0033333333333333335,
+   "reg_mean": 390.4905925686904
+  }
+ },
+ "slope_err": -0.507283530988214,
+ "slope_t_est": 4.1077534323544415e-17,
+ "slope_t_behav": null,
+ "behav_censored_count": 2,
+ "behav_note": "behavioural collapse not reached at this horizon for some N; the anytime bonus is still above gamma/3, which is the Remark-noN prediction, so no slope is fitted",
+ "prediction": {
+  "err": "-0.5",
+  "t_est": "-1 to 0",
+  "t_behav": "0 (Remark noN: no 1/N for anytime)"
+ }
+}

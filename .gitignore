@@ -225,3 +225,6 @@ __marimo__/
 # Experiment results are the record of record and must be committed.
 !results/*.json
 !**/results/*.json
+# Run checkpoints are a resume cache, not a record; results/ is the record.
+out_*/checkpoints/
+out_*/figures/diagnostic/

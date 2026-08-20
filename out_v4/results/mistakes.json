@@ -1,0 +1,22 @@
+{
+ "mv_q0.0": {
+  "mistaken_rounds": 153.5,
+  "sem": 12.20314167199032
+ },
+ "mv_q0.2": {
+  "mistaken_rounds": 895.1666666666666,
+  "sem": 101.86737019826865
+ },
+ "perceptron_q0.0": {
+  "mistaken_rounds": 153.5,
+  "sem": 12.20314167199032
+ },
+ "ogd_q0.0": {
+  "mistaken_rounds": 153.5,
+  "sem": 12.20314167199032
+ },
+ "ogd_q0.2": {
+  "mistaken_rounds": 14377.0,
+  "sem": 392.2880744215064
+ }
+}

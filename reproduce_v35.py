@@ -1045,11 +1045,17 @@ def exp_collapse(quick, full=False, gamma_dec=0.01, Delta_dec=0.01):
     return dict(per_N=per_N, slope_err=_slope("err_T"),
                 slope_t_est=_slope("t_est"),
                 slope_t_behav=(None if n_cens else _slope("t_behav")),
+                # partial fit over the N where collapse WAS reached: the
+                # anytime collapse time is near-flat in N, against the epoch
+                # variant's exact -1, which is the Remark-noN separation
+                slope_t_behav_uncensored=_slope("t_behav"),
                 behav_censored_count=n_cens,
-                behav_note=("behavioural collapse not reached at this "
-                            "horizon for some N; the anytime bonus is still "
-                            "above gamma/3, which is the Remark-noN "
-                            "prediction, so no slope is fitted"),
+                behav_note=("behavioural collapse is censored at small N and "
+                            "reached at large N; where it is reached its time "
+                            "is near-flat in N, because the anytime bonus "
+                            "carries no 1/N speedup (Remark noN).  No slope "
+                            "is fitted over all N; see "
+                            "slope_t_behav_uncensored"),
                 prediction=dict(err="-0.5", t_est="-1 to 0",
                                 t_behav="0 (Remark noN: no 1/N for anytime)"))
 

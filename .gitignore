@@ -228,3 +228,4 @@ __marimo__/
 # Run checkpoints are a resume cache, not a record; results/ is the record.
 out_*/checkpoints/
 out_*/figures/diagnostic/
+out_v4_full/

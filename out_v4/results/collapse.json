@@ -59,8 +59,9 @@
  "slope_err": -0.507283530988214,
  "slope_t_est": 4.1077534323544415e-17,
  "slope_t_behav": null,
+ "slope_t_behav_uncensored": -0.3001962706453835,
  "behav_censored_count": 2,
- "behav_note": "behavioural collapse not reached at this horizon for some N; the anytime bonus is still above gamma/3, which is the Remark-noN prediction, so no slope is fitted",
+ "behav_note": "behavioural collapse is censored at small N and reached at large N; where it is reached its time is near-flat in N, because the anytime bonus carries no 1/N speedup (Remark noN).  No slope is fitted over all N; see slope_t_behav_uncensored",
  "prediction": {
   "err": "-0.5",
   "t_est": "-1 to 0",

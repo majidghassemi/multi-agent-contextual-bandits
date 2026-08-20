@@ -1,6 +1,8 @@
 \documentclass[11pt]{article}
 \usepackage{amsmath,amsthm,amssymb,mathtools}
 \usepackage{bm}
+\usepackage{graphicx}
+\graphicspath{{out_v4/figures/}}
 \usepackage{hyperref}
 \usepackage{cleveref}
 \usepackage{geometry}
@@ -2049,9 +2051,9 @@ the two algorithms. The epoch variant's collapse time
 should shrink like $1/N$, the anytime variant's should not.  Exp.~R1
 of Section~\ref{sec:recon} confirms the first half (fitted slope
 $-1.00$) and Exp.~5 of Section~\ref{sec:experiments} confirms the
-second in the only way available at simulable horizons, by showing
-that the anytime bonus remains far above $\gamma/3$ at every $N$
-tested.
+second directly, fitting $-0.30$ for the anytime variant on the same
+instance, with the anytime bonus remaining far above $\gamma/3$ at
+every $N$ tested.
 \end{remark}
 
 \begin{remark}[Gossip implementation of the boundary averaging]
@@ -3003,6 +3005,14 @@ regret slopes rise from $0.47$ at $N=1$ to $0.94$ at $N=16$, that is,
 regret becomes more linear as pooling sharpens the biased estimate,
 which is the qualitative signature of Theorem~\ref{thm:cec}.
 
+Figure~\ref{fig:fixedpoint} shows the plateau against $N$ at both levels.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.68\linewidth]{fig_fixedpoint}
+\caption{\textbf{Exp.~1. The plateau is $N$-independent; only its sharpness improves.} Measured displacement $\|\widehat{\bm\theta}_T-\bm\theta^{\!*}\|$ against the number of agents at both certified bias levels, with $\pm1$ SEM. Dashed lines are the Picard predictions $\|\bm\delta\|$, which the estimator reaches at every $N$. Pooling does not escape the biased fixed point; it converges to it faster and more tightly.}\label{fig:fixedpoint}
+\end{figure}
+
 \paragraph{Exp.~2 (regret against the spectral gap, and what
 cooperation is worth).}
 $N=20$, $T=2\times10^4$, circulant graphs $C_{20}(1..k)$ for
@@ -3049,6 +3059,14 @@ $A+B\log(1/\gamma)$, which favors Conjecture~\ref{conj:gossip} over
 the proved bound and clearly excludes the logarithmic alternative.
 We report this as support for the conjecture, not as a proof of it.
 
+Figure~\ref{fig:gap} shows all four arms across the gap sweep.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.80\linewidth]{fig_gap}
+\caption{\textbf{Exp.~2. Regret is flat in the spectral gap, and cooperation is priced.} Final latent regret against $\gamma(W)$ over circulant graphs $C_{20}(1..k)$, $\pm1$ SEM. Naive cooperation under common bias varies by $0.6$ percent across a forty-fold range of the gap, so the phase transition of Section~\ref{sec:phase} is not visible as a regret-level effect. Isolation is \emph{worse} than pooling under the same bias. D-CESA separates only on the heterogeneous instance, and its curve is the evidence for Conjecture~\ref{conj:gossip}.}\label{fig:gap}
+\end{figure}
+
 \paragraph{Exp.~3 (certification propagation, and the looseness of
 Lemma~\ref{lem:prop}).}
 Cycle graph, $N=20$, a single source agent with firing rate
@@ -3064,6 +3082,14 @@ at $K=200$ where it certifies $1.8\times10^{-3}$ against the measured
 $4.9\times10^{-3}$.  The phenomenon is as described. The constant is
 loose by a factor of about $2.7$ at the first point where it says
 anything at all.
+
+Figure~\ref{fig:prop} overlays the bound on the measurement, where its vacuity is plain.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.70\linewidth]{fig_prop}
+\caption{\textbf{Exp.~3. The phenomenon holds; the bound is vacuous over most of the range.} Effective certification rate at the antipodal agent against gossip rounds $K$, converging to the uniform mixture $\bar p|S|/N$. The lemma's lower bound is identically zero until $K\approx181$, because the $\sqrt N\lambda_*^K$ deviation term exceeds $|S|/N$; at $K=200$, its first non-trivial point, it certifies $1.8\times10^{-3}$ against a measured $4.9\times10^{-3}$.}\label{fig:prop}
+\end{figure}
 
 \paragraph{Exp.~4 (measured gate onset).}
 $N=8$, one large-bias agent, sweeping $\bar p$, and measuring the
@@ -3089,25 +3115,49 @@ directly, rather than inferring it from a regret difference, matters. The regret
 gate is small and easily swamped, whereas the onset is exactly the
 quantity the lemma controls.
 
-\paragraph{Exp.~5 (behavioural collapse is not reachable at simulable
-horizons, as predicted).}
+Figure~\ref{fig:gate_onset} shows the sweep, with censored points marked.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.72\linewidth]{fig_gate_onset}
+\caption{\textbf{Exp.~4. Measured gate onset, and where surrogate gating fails.} First round after which no gate is ever wrong again, against the audit rate $\bar p$. At $q=0$ all three gates coincide exactly. At $q=0.2$ the featurized gates are censored on some or all seeds (hollow markers), meaning they never stop making gate mistakes within the horizon; censored points are excluded from the fits.}\label{fig:gate_onset}
+\end{figure}
+
+\paragraph{Exp.~5 (behavioural collapse carries no $1/N$ speedup, as
+predicted).}
 We instrument the event Theorem~\ref{thm:cec} actually asserts. The
 first sustained window in which selected actions on
 $\mathcal X_{\mathrm{dec}}^{\gamma,\Delta}$ carry latent regret
-$\geq\Delta$.  Sweeping $N\in\{2,\dots,32\}$ at $c_\beta=0.15$ with
-$(\gamma,\Delta)=(0.01,0.01)$, the event is \emph{censored} at every
-$N$ tested. no sustained entry occurs before the horizon.  The reason
-is quantitative and is exactly Remark~\ref{rem:noN}. The per-agent UCB
-bonus at $T=1.2\times10^4$ is $\approx0.87$ against
+$\geq\Delta$.  Sweeping $N\in\{2,4,8,16,32\}$ at $c_\beta=0.15$ with
+$(\gamma,\Delta)=(0.01,0.01)$ and $T=1.5\times10^4$, the event is
+\emph{censored} at $N=2$ and $N=4$, where no sustained entry occurs
+before the horizon, and is reached at $N=8,16,32$ at
+$T^\star=1.18\times10^4,\,1.13\times10^4,\,7.8\times10^3$.  The
+informative part is not that it is reached but how slowly it moves.
+Over the three uncensored levels the fitted exponent is $-0.30$,
+against the epoch variant's $-1.00$ (Exp.~R1) on the same instance: a
+four-fold increase in $N$ buys roughly a third off the collapse time
+rather than a factor of four.  The reason is quantitative and is
+exactly Remark~\ref{rem:noN}. The per-agent UCB bonus at
+$T=1.5\times10^4$ is $\approx0.785$ against
 $\gamma/3=3.3\times10^{-3}$, more than two orders of magnitude too
-large, and it carries no $1/N$ speedup, so no accessible $N$ helps.
-The estimation-side quantities do collapse on schedule
-(Exp.~1), and the epoch variant, which has no bonus, collapses
-behaviourally within reach (Exp.~R1).  We therefore report no fitted
-$N$-exponent for the anytime behavioural collapse time. A censored
-measurement is not a measurement, and the honest statement is that
-Theorem~\ref{thm:cec}'s behavioural conclusion is verified for the
-epoch variant and remains asymptotic for the anytime one.
+large, and it carries no $1/N$ speedup, so added agents barely help.
+The estimation-side quantities, by contrast, collapse on schedule and
+do improve with $N$ (Exp.~1).  We report no exponent fitted over all
+$N$, since two levels are censored and a censored measurement is not a
+measurement; the $-0.30$ above is a partial fit over the uncensored
+levels and is reported as such.  The honest statement is that
+Theorem~\ref{thm:cec}'s behavioural conclusion is reachable in
+simulation for the anytime algorithm at moderate $N$, but without the
+$1/N$ acceleration that the epoch variant delivers exactly.
+
+Figure~\ref{fig:collapse} shows the censoring pattern and the bonus against $\gamma/3$.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{fig_collapse}
+\caption{\textbf{Exp.~5. The anytime bonus carries no $1/N$ speedup.} (a)~Behavioural fraction at the horizon against $N$; the sustained-entry event is censored at $N=2,4$ and reached at $N=8,16,32$. (b)~The per-agent exploration bonus at $T$ sits at $0.785$ against $\gamma/3=3.3\times10^{-3}$, more than two orders of magnitude too large, and is flat in $N$. This is why the fitted exponent over the uncensored levels is $-0.30$ rather than the epoch variant's $-1.00$.}\label{fig:collapse}
+\end{figure}
 
 \subsection{Reading guide}
 Exps.~1 and~R2 validate the fixed-point machinery at bias levels where
@@ -3117,8 +3167,10 @@ and supplies the strongest available evidence for
 Conjecture~\ref{conj:gossip}.  Exp.~3 confirms
 Lemma~\ref{lem:prop}'s phenomenon while exposing its constant.
 Exp.~4 confirms the gate-transient scaling and the failure mode of the
-featurized gate.  Exp.~5 is a negative instrumentation result and is
-reported as such.
+featurized gate.  Exp.~5 supplies the other half of the separation
+Remark~\ref{rem:noN} predicts, measuring the anytime behavioural
+collapse exponent as $-0.30$ against the epoch variant's $-1.00$, and
+is reported with its two censored levels stated.
 
 \subsection{Remaining experimental work}
 Two items are outstanding and we state them rather than leave them
@@ -3154,9 +3206,17 @@ $N^{-1}$, which is why every median above is $511$ times a power of
 two.  The finding is that $k^\star$ is $N$-independent; the fitted
 slope merely records it.  This is the theorem's mechanism observed
 directly. The per-epoch error depends on agent-rounds
-$m_k=Nt_1 2^{k-1}$ only.  Together with Exp.~5, which shows the
-anytime bonus stuck far above $\gamma/3$ at every $N$, this is the
-predicted separation between the two algorithms.
+$m_k=Nt_1 2^{k-1}$ only.  Together with Exp.~5, which fits $-0.30$ for
+the anytime variant with its bonus stuck far above $\gamma/3$ at every
+$N$, this is the predicted separation between the two algorithms.
+
+Figure~\ref{fig:epoch} shows the medians with the per-seed spread behind them.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.66\linewidth]{fig_epoch}
+\caption{\textbf{Exp.~R1. The epoch count to collapse is $N$-independent.} Median wall-clock collapse time $T^\star$ against $N$, with per-seed values as faint points. The fitted slope $-1.00$ is not an independent measurement: with $t_1=\lceil2048/N\rceil$ and $k^\star$ constant, $T^\star=t_1(2^{k^\star}-1)$ is forced to be proportional to $N^{-1}$, which is why every median is $511$ times a power of two. The finding is that $k^\star$ does not grow with $N$; the slope records it. The reference line is offset for visibility.}\label{fig:epoch}
+\end{figure}
 
 \paragraph{Exp.~R2 (certified-regime run).}  Anytime naive cooperation,
 $N=8$, $T=3\times10^4$, six seeds, at $c_\beta\in\{0.15,0.18\}$,
@@ -3171,6 +3231,14 @@ verifiably satisfied at the operating point.  Tracking is thus
 observed to hold empirically at $c_\beta$ where the certificate
 $\tilde\kappa<1$ of Proposition~\ref{prop:tracking} does not fire,
 consistent with sufficiency, not necessity.
+
+Figure~\ref{fig:certified} shows both trajectories against their Picard predictions.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.66\linewidth]{fig_certified}
+\caption{\textbf{Exp.~R2. The estimator collapses onto the \emph{predicted} fixed point.} Trajectories of $\|\widehat{\bm\theta}_t-\bm\theta^{\!*}\|$ at the two certified bias levels, inside the band where every hypothesis of Theorem~\ref{thm:cec_epoch} is numerically verified. Dashed lines mark the Picard predictions $\bm\theta_\infty$, matched to within $3\%$ of $\|\bm\delta\|$.}\label{fig:certified}
+\end{figure}
 
 \paragraph{Exp.~R3 (robust-aggregation baseline).}  One adversarial
 agent (bias $1.0$ on the flattered action) among $N=8$,
@@ -3197,6 +3265,14 @@ trimmed mean degrades to $71\pm3$. Trimming pays a variance and bias
 cost even when no agent is adversarial.  This is
 the empirical counterpart of Remark~\ref{rem:robust_agg}.
 
+Figure~\ref{fig:baselines} shows both regimes side by side.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{fig_baselines}
+\caption{\textbf{Exp.~R3. Trimming pays even when nothing is adversarial.} (a)~One large-bias adversary among $N=8$; note the \emph{broken} linear axis, needed because the unbatched coordinate-wise median starves at $622$ while the other four rules sit below $70$. (b)~Within-tolerance common bias, where Theorem~\ref{thm:lower_tol} forbids any rule from separating: the differences are inside $\pm1$ SEM, so the apparent D-CESA advantage over the oracle is not one, while the trimmed mean pays a real cost.}\label{fig:baselines}
+\end{figure}
+
 \paragraph{Exp.~R4 (gate comparison under label noise).}  Same
 adversary setting, $\bar p=0.05$, six seeds, counting mistaken
 gate-rounds directly.  At $q=0.2$ the OGD-logistic gate accumulates
@@ -3212,6 +3288,14 @@ Lemma~\ref{lem:trust_mistakes} for the majority vote,
 Proposition~\ref{prop:perceptron} for the perceptron at $q=0$ only,
 and Corollary~\ref{cor:agnostic} as the only guarantee available for
 the featurized gate under noise.
+
+Figure~\ref{fig:mistakes} shows the counts by gate and noise level.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.68\linewidth]{fig_mistakes}
+\caption{\textbf{Exp.~R4. Surrogate-loss gating is what label noise punishes.} Mistaken trust rounds by gate and label-noise level, $\pm1$ SEM, log scale. At $q=0$ all three gates coincide exactly at $154$, which is the cleanest statement of Proposition~\ref{prop:perceptron}. At $q=0.2$ the OGD-logistic gate pays a $16\times$ penalty against the majority vote.}\label{fig:mistakes}
+\end{figure}
 
 %% =====================================================================
 \section{Caveats and Open Problems}\label{sec:caveats}
@@ -3378,6 +3462,14 @@ $1.00$ & $2.012$ & $0.73$ & $2.30$ & no  & $0.112$ & $0.0689$ & $0.0414$ & $0.06
 \end{tabular}
 \end{center}
 
+Figure~\ref{fig:certify} plots these moduli across the grid.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.72\linewidth]{fig_certify}
+\caption{\textbf{Appendix. Which certificates fire, and where.} The two contraction moduli and the tracking modulus across the bias grid. $\varrho_{\mathrm{loc}}$ perturbs only around $\bm\theta_\infty$; $\varrho_{B_R}$ is the global modulus over sampled pairs in $B_R$ that Theorem~\ref{thm:cec_epoch} actually consumes, and the two differ by roughly a factor of three at the top of the grid. $\tilde\kappa$ is drawn as the range over eight independent batches, because its only interesting property is that it straddles $1$ at $c_\beta=0.05$ and lies wholly above $1$ everywhere else. Shaded: the certified band $[0.15,0.18]$.}\label{fig:certify}
+\end{figure}
+
 \paragraph{Tracking modulus.}  The averaged-contraction modulus of
 Proposition~\ref{prop:tracking} is a supremum and its sampled
 estimates are one-sided. They proved \emph{sampling-effort
@@ -3452,9 +3544,10 @@ $\widetilde B_\beta$ inflation
 ($C_{\mathrm{mar}}K_{\mathcal A}^2\alpha_T/\sqrt{\sigma_{\min}}
 \approx 7.5\times10^2$) dominates.  The theory's collapse times are
 sufficient-side bounds with loose constants, and we make no tightness
-claim for them. Exp.~5 confirms the practical consequence. The
-behavioural collapse of the anytime algorithm is not reachable in
-simulation.
+claim for them. Exp.~5 shows the practical consequence. The
+behavioural collapse of the anytime algorithm is reachable in
+simulation only at moderate $N$, and its time is near-flat in $N$
+rather than falling like $1/N$.
 \item \emph{Term ordering in Theorem~\ref{thm:dcesa} at simulable
 scale.}  Evaluating \eqref{eq:dcesa} at $N=16$, $T=5\times10^4$,
 complete graph, $\sigma=0.3$, $d=12$ with the verified-instance

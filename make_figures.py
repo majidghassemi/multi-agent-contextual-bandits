@@ -566,7 +566,7 @@ def fig_collapse(S, outdir):
 
 # ====================================================== review figures (v5)
 SCHED_C = dict(code=CORAL, exact=TEAL)
-SCHED_L = dict(code="code schedule", exact="analysed schedule")
+SCHED_L = dict(code="wider schedule", exact="analysed schedule")
 
 
 def _logN(ax, Ns):

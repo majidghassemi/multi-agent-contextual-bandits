@@ -564,6 +564,93 @@ def fig_collapse(S, outdir):
     save(fig, outdir, "fig_collapse")
 
 
+# ====================================================== review figures (v5)
+SCHED_C = dict(code=CORAL, exact=TEAL)
+SCHED_L = dict(code="code schedule", exact="analysed schedule")
+
+
+def _logN(ax, Ns):
+    ax.set_xscale("log", base=2)
+    ax.set_xticks(Ns)
+    ax.set_xticklabels([str(n) for n in Ns])
+    ax.xaxis.set_minor_formatter(NullFormatter())
+    ax.set_xlabel(r"number of agents $N$")
+
+
+def fig_collapse_bonus(S, outdir):
+    """R6 -- realised bonus gaps on the decoupling region against gamma/6,
+    and how often the realised optimistic advantage favours the bad action."""
+    fig, axes = plt.subplots(1, 2, figsize=(6.7, 2.95))
+    Ns = None
+    for sched in ("code", "exact"):
+        per = S.get(sched)
+        if not per:
+            continue
+        Ns = sorted(int(n) for n in per)
+        g = lambda n: per[str(n)] if str(n) in per else per[n]
+        m = [g(n)["bgap_mean"]["mean"] for n in Ns]
+        e = [g(n)["bgap_mean"]["ci95"] for n in Ns]
+        axes[0].errorbar(Ns, m, yerr=e, capsize=2, lw=1.4,
+                         label=SCHED_L[sched], **_marker_kw(SCHED_C[sched]))
+        fr = [g(n)["frac_tot_pos"]["mean"] for n in Ns]
+        fe = [g(n)["frac_tot_pos"]["ci95"] for n in Ns]
+        axes[1].errorbar(Ns, fr, yerr=fe, capsize=2, lw=1.4,
+                         label=SCHED_L[sched], **_marker_kw(SCHED_C[sched]))
+    if Ns is None:
+        plt.close(fig)
+        return
+    axes[0].axhline(S["gamma_over_6"], ls=(0, (4, 3)), lw=1.5, color=MUTE,
+                    label=r"$\gamma/6$")
+    axes[0].set_yscale("log")
+    axes[0].set_ylabel("mean bonus gap on region")
+    axes[0].set_title("(a)", fontsize=11.5, loc="left")
+    axes[0].legend(loc="best", fontsize=8.2)
+    axes[1].set_ylabel("frac. optimistic adv. to bad action")
+    axes[1].set_ylim(0, 1.02)
+    axes[1].set_title("(b)", fontsize=11.5, loc="left")
+    for ax in axes:
+        _logN(ax, Ns)
+        finish(ax)
+    fig.tight_layout(w_pad=1.6)
+    save(fig, outdir, "fig_collapse_bonus")
+
+
+def fig_epoch_known(S, outdir):
+    """R7 -- Definition 6 with a pilot-estimated domain, no projection, and
+    the oracle ball.  Identical medians mean the projection never binds."""
+    fig, ax = plt.subplots(figsize=(3.5, 2.8))
+    styles = dict(pilot=(TEAL, "o", "pilot domain"),
+                  none=(GOLD, "s", "no projection"),
+                  oracle=(GRAPHITE, "^", r"oracle $B_R(\theta^*)$"))
+    Ns = None
+    for dom, (c, mk, lab) in styles.items():
+        if dom not in S:
+            continue
+        per = {int(n): v for n, v in S[dom]["per_N"].items()}
+        Ns = sorted(per)
+        xs = [n for n in Ns if per[n]["median"]]
+        ax.plot(xs, [per[n]["median"] for n in xs], marker=mk, color=c,
+                markerfacecolor=c, markeredgecolor="white", lw=1.4,
+                label=lab, zorder=4 if dom == "pilot" else 3,
+                alpha=1.0 if dom == "pilot" else 0.8)
+    if Ns is None:
+        plt.close(fig)
+        return
+    meds = [tuple(v["median"] for _, v in sorted(
+        ((int(n), v) for n, v in S[d]["per_N"].items())))
+        for d in styles if d in S]
+    if len(meds) > 1 and all(m == meds[0] for m in meds):
+        ax.text(0.04, 0.06, "all three domains coincide:\nprojection never binds",
+                transform=ax.transAxes, fontsize=8.4, color=MUTE,
+                va="bottom", ha="left")
+    ax.set_yscale("log", base=2)
+    _logN(ax, Ns)
+    ax.set_ylabel(r"collapse time $T^\star$")
+    ax.legend(loc="upper right", fontsize=8.2)
+    finish(ax)
+    save(fig, outdir, "fig_epoch_known")
+
+
 # ==================================================================== main
 # name -> builder, in the order the paper presents them.
 BUILDERS = [
@@ -577,6 +664,8 @@ BUILDERS = [
     ("baselines", fig_baselines),      # R3
     ("mistakes", fig_mistakes),        # R4
     ("certify", fig_certify),          # certification appendix
+    ("collapse_bonus", fig_collapse_bonus),  # R6 (review)
+    ("epoch_known", fig_epoch_known),        # R7 (review)
 ]
 
 

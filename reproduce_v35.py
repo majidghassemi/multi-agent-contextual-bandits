@@ -435,9 +435,27 @@ class EdgeResidualFeatures:
 
 
 # ================================================================ ALGORITHMS
-def _alpha(t, S_bound=1.5, delta=0.05):
-    d = D_C * K
-    return (SIGMA * np.sqrt(d * np.log(1 + t / LAMB) + 2 * np.log(1 / delta))
+BONUS_SCHEDULE = "code"     # "code" reproduces out_v4; "exact" is the paper's
+
+
+def _alpha(t, S_bound=1.5, delta=0.05, schedule=None):
+    """Bonus multiplier alpha_t.
+
+    "code"  : sigma sqrt(d log(1 + t/lambda) + 2 log(1/delta)) + sqrt(lambda) S,
+              the schedule behind every number in out_v4.
+    "exact" : sigma sqrt(d log(1 + t L^2/(d lambda)) + 2 log(1/delta))
+              + sqrt(lambda) S with L = 1, the schedule analysed in the paper
+              (Sec. 6).  It is slightly narrower than "code".
+    """
+    schedule = schedule or BONUS_SCHEDULE
+    d, L = D_C * K, 1.0
+    if schedule == "code":
+        inner = d * np.log(1 + t / LAMB)
+    elif schedule == "exact":
+        inner = d * np.log(1 + t * L ** 2 / (d * LAMB))
+    else:
+        raise ValueError(f"unknown bonus schedule {schedule}")
+    return (SIGMA * np.sqrt(inner + 2 * np.log(1 / delta))
             + np.sqrt(LAMB) * S_bound)
 
 
@@ -445,7 +463,7 @@ def run_anytime(bias_mag, n_agents, T, seeds, seed0, agg="mean",
                 gate="mv", pbar=0.1, q=0.0, record_every=250, inv_every=5,
                 topology="complete", k_circ=None, W=None,
                 gate_mix="selfcomp", theta_inf=None,
-                gamma_dec=0.02, Delta_dec=0.05):
+                gamma_dec=0.02, Delta_dec=0.05, schedule=None):
     """Anytime cooperative LinUCB on an arbitrary gossip graph.
 
     agg in {isolated, mean, gossip, oracle, trim, median, gate}.
@@ -526,13 +544,30 @@ def run_anytime(bias_mag, n_agents, T, seeds, seed0, agg="mean",
     win_hit = np.zeros(Sd)          # region rounds with latent regret>=Delta
     win_tot = np.zeros(Sd)
     traj_behav, traj_behav_n = [], []
+    # Review instrumentation (reads only, consumes no random numbers, so it
+    # leaves every out_v4 number unchanged).  On decoupling-region rounds,
+    # with a~ the fixed-point greedy action and "near" the actions with
+    # latent loss < Delta:
+    #   bgap  = max_near [b(a) - b(a~)]        bonus help to a near action
+    #   sgap  = min_near [s(a~) - s(a)]        estimated-score advantage of a~
+    #   tot   = min_near [(s+b)(a~) - (s+b)(a)] realised optimistic advantage
+    #   eerr  = 2 max_a ||theta_hat_a - theta_inf_a||  (score error bound, L=1)
+    # Thm. cec's sufficient conditions are bgap <= gamma/6 and eerr <= gamma/3.
+    rv_keys = ("n", "bgap_sum", "bgap_max", "bgap_ok", "sgap_sum",
+               "tot_sum", "tot_pos", "eerr_sum", "eerr_ok", "both_ok")
+    rv_win = {k: np.zeros(Sd) for k in rv_keys}
+    rv_traj = {k: [] for k in rv_keys}
+    rv_all = {k: np.zeros(Sd) for k in rv_keys}
+    rv_win["bgap_max"][:] = -np.inf
+    rv_all["bgap_max"][:] = -np.inf
 
     for t in range(1, T + 1):
         X = contexts(rng, Sd * N).reshape(Sd, N, D_C)
         sc = np.einsum('snd,snkd->snk', X, TH)
         bon = np.sqrt(np.maximum(
             np.einsum('snd,snkde,sne->snk', X, Ainv, X), 0.0))
-        act = (sc + _alpha(t) * bon).argmax(2)
+        a_t = _alpha(t, schedule=schedule)
+        act = (sc + a_t * bon).argmax(2)
         lat = np.einsum('snd,kd->snk', X, TH_STAR)
         sel_lat = np.take_along_axis(lat, act[:, :, None], 2)[:, :, 0]
         inst_reg = lat.max(2) - sel_lat
@@ -550,6 +585,33 @@ def run_anytime(bias_mag, n_agents, T, seeds, seed0, agg="mean",
             in_reg = gap_min >= gamma_dec
             win_tot += in_reg.sum(1)
             win_hit += (in_reg & (inst_reg >= Delta_dec)).sum(1)
+
+            bvec = a_t * bon                                  # (Sd,N,K)
+            near = reg_all < Delta_dec
+            b_til = np.take_along_axis(bvec, atil[:, :, None], 2)
+            s_til = np.take_along_axis(sc, atil[:, :, None], 2)
+            bgap = np.where(near, bvec - b_til, -np.inf).max(2)
+            sgap = np.where(near, s_til - sc, np.inf).min(2)
+            tot = np.where(near, (s_til + b_til) - (sc + bvec), np.inf).min(2)
+            eerr = 2.0 * np.linalg.norm(TH - TI[None, None], axis=3).max(2)
+            m = in_reg
+            vals = dict(
+                n=m.sum(1),
+                bgap_sum=np.where(m, bgap, 0.0).sum(1),
+                bgap_ok=(m & (bgap <= gamma_dec / 6)).sum(1),
+                sgap_sum=np.where(m, sgap, 0.0).sum(1),
+                tot_sum=np.where(m, tot, 0.0).sum(1),
+                tot_pos=(m & (tot > 0)).sum(1),
+                eerr_sum=np.where(m, eerr, 0.0).sum(1),
+                eerr_ok=(m & (eerr <= gamma_dec / 3)).sum(1),
+                both_ok=(m & (bgap <= gamma_dec / 6)
+                         & (eerr <= gamma_dec / 3)).sum(1))
+            for k_, v_ in vals.items():
+                rv_win[k_] += v_
+                rv_all[k_] += v_
+            bmax = np.where(m, bgap, -np.inf).max(1)
+            rv_win["bgap_max"] = np.maximum(rv_win["bgap_max"], bmax)
+            rv_all["bgap_max"] = np.maximum(rv_all["bgap_max"], bmax)
 
         if gate_obj is not None:
             fire = (rng.random((Sd, N, N)) < pbar).astype(float)
@@ -617,6 +679,14 @@ def run_anytime(bias_mag, n_agents, T, seeds, seed0, agg="mean",
                 traj_behav_n.append(float(win_tot.sum()))
                 win_hit[:] = 0.0
                 win_tot[:] = 0.0
+                for k_ in rv_keys:
+                    if k_ == "bgap_max":
+                        mx = float(rv_win[k_].max())
+                        rv_traj[k_].append(mx if np.isfinite(mx) else None)
+                        rv_win[k_][:] = -np.inf
+                    else:
+                        rv_traj[k_].append(float(rv_win[k_].sum()))
+                        rv_win[k_][:] = 0.0
 
     out = dict(reg=reg.tolist(), reg_mean=float(reg.mean()),
                reg_sem=_sem(reg), reg_clean_mean=float(reg_clean.mean()),
@@ -624,7 +694,10 @@ def run_anytime(bias_mag, n_agents, T, seeds, seed0, agg="mean",
                d_star=float(np.linalg.norm(
                    TH[:, 0] - TH_STAR[None], axis=(1, 2)).mean()),
                traj_t=traj_t, traj_d=traj_d, traj_reg=traj_reg,
-               bonus_T=float(2 * np.sqrt(2) * _alpha(T) / np.sqrt(T * 0.02)))
+               bonus_T=float(2 * np.sqrt(2) * _alpha(T, schedule=schedule)
+                             / np.sqrt(T * 0.02)),
+               alpha_T=float(_alpha(T, schedule=schedule)),
+               schedule=schedule or BONUS_SCHEDULE)
     if gate_obj is not None:
         out["gate_mistaken_rounds"] = float(gate_obj.mist.mean())
         out["gate_mistaken_sem"] = _sem(gate_obj.mist)
@@ -638,6 +711,9 @@ def run_anytime(bias_mag, n_agents, T, seeds, seed0, agg="mean",
         out["traj_behav_n"] = traj_behav_n
         out["t_behav"] = behavioural_collapse_time(traj_t, traj_behav,
                                                    counts=traj_behav_n)
+        out["rv_traj"] = rv_traj                 # per recording window, summed over seeds
+        out["rv_all"] = {k: [float(x) if np.isfinite(x) else None for x in v]
+                         for k, v in rv_all.items()}   # per seed, whole run
     out["_TH0"] = TH[:, 0].tolist()          # for fixed-point comparison
     return out
 
@@ -710,6 +786,104 @@ def run_epoch(c_beta, n_agents, t1, theta_inf, collapse_thr, seed,
         if r <= collapse_thr:
             return t1 * (2 ** k), k, hist
     return None, None, hist
+
+
+def _epoch_fit(rng, m, actions_fn, c_beta, chunk=2_000_000):
+    """Pool m fresh samples whose actions come from actions_fn(X), and return
+    the per-arm ridge fit (lambda I + sum z z^T)^{-1} sum y z."""
+    Ab = [LAMB * np.eye(D_C) for _ in range(K)]
+    bb = [np.zeros(D_C) for _ in range(K)]
+    left = m
+    while left > 0:
+        c = min(left, chunk)
+        left -= c
+        X = contexts(rng, c)
+        pi = actions_fn(X)
+        for a in range(K):
+            Xa = X[pi == a]
+            yv = (Xa @ TH_STAR[a] + (c_beta if a == A1 else 0.0)
+                  + SIGMA * rng.standard_normal(len(Xa)))
+            Ab[a] += Xa.T @ Xa
+            bb[a] += yv @ Xa
+    return np.stack([np.linalg.solve(Ab[a], bb[a]) for a in range(K)])
+
+
+def run_epoch_def6(c_beta, n_agents, t1, theta_inf, collapse_thr, seed,
+                   domain="pilot", R_K=0.5, pi0="uniform", max_epochs=15):
+    """Projected epoch least squares exactly as in Definition 6.
+
+    Epoch 0 lasts t1 rounds and plays the known policy pi0 (uniform random
+    actions by default, so no knowledge of theta* is used).  Epoch k >= 1
+    lasts t1 2^(k-1) rounds and plays the greedy policy of the current
+    estimate.  Epoch k ends at round t1 2^k.
+
+    domain:
+      "pilot"  : K is the ball of radius R_K around the epoch-0 fit.  K is
+                 fixed before any greedy epoch and uses no oracle knowledge.
+                 Conditional on epoch 0 it is a known domain, as the theorem
+                 requires.
+      "none"   : no projection (K = R^d), a control for whether projection
+                 matters at all.
+      "oracle" : the out_v4 domain B_R(theta*), under the Def. 6 schedule,
+                 for a like-for-like comparison.
+    Returns the round at which the first estimate within collapse_thr of
+    theta_inf becomes available (end of the epoch that produced it), the
+    index of that estimate, the error history, and domain diagnostics.
+    """
+    rng = np.random.default_rng(seed)
+    TI = np.asarray(theta_inf)
+    m0 = n_agents * t1
+    if pi0 == "uniform":
+        fit0 = _epoch_fit(rng, m0, lambda X: rng.integers(K, size=len(X)),
+                          c_beta)
+    elif pi0 == "latent":
+        fit0 = _epoch_fit(rng, m0, lambda X: (X @ TH_STAR.T).argmax(1), c_beta)
+    else:
+        raise ValueError(pi0)
+
+    if domain == "pilot":
+        center, radius = fit0.copy(), R_K
+    elif domain == "oracle":
+        center, radius = TH_STAR.copy(), R_BASIN
+    elif domain == "none":
+        center, radius = None, np.inf
+    else:
+        raise ValueError(domain)
+
+    n_active = [0]                       # epochs in which projection binds
+
+    def proj(TH):
+        if center is None:
+            return TH
+        dev = np.linalg.norm(TH - center)
+        if dev <= radius:
+            return TH
+        n_active[0] += 1
+        return center + (TH - center) * (radius / dev)
+
+    info = dict(
+        theta_inf_in_K=bool(center is None
+                            or np.linalg.norm(TI - center) <= radius),
+        center_to_theta_star=(None if center is None else
+                              float(np.linalg.norm(center - TH_STAR))),
+        center_to_theta_inf=(None if center is None else
+                             float(np.linalg.norm(center - TI))))
+    TH = proj(fit0)
+    hist = [float(np.linalg.norm(TH - TI))]
+    if hist[-1] <= collapse_thr:
+        info["proj_active_epochs"] = n_active[0]
+        return t1, 1, hist, info
+    for k in range(1, max_epochs + 1):
+        m = n_agents * t1 * (2 ** (k - 1))
+        frozen = TH.copy()
+        TH = proj(_epoch_fit(rng, m, lambda X: (X @ frozen.T).argmax(1),
+                             c_beta))
+        hist.append(float(np.linalg.norm(TH - TI)))
+        if hist[-1] <= collapse_thr:
+            info["proj_active_epochs"] = n_active[0]
+            return t1 * (2 ** k), k + 1, hist, info
+    info["proj_active_epochs"] = n_active[0]
+    return None, None, hist, info
 
 
 # =================================================================== DRIVERS
@@ -1210,17 +1384,263 @@ def exp_gate_onset(quick, full=False):
     return res
 
 
+# ================================================= REVIEW EXPERIMENTS (v5)
+#  Added in response to reviewer feedback.  None of them is part of a default
+#  or --paper run, and none changes an out_v4 number.  Run them with
+#      python3 reproduce_v35.py --paper --review --outdir out_v5
+REVIEW_SEEDS = 20          # replicates for the vectorised anytime runs
+EPOCH_SEEDS = 10           # replicates for the (sequential) epoch runs
+T_CRIT = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447,
+          7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228, 11: 2.201, 12: 2.179,
+          13: 2.160, 14: 2.145, 15: 2.131, 16: 2.120, 17: 2.110, 18: 2.101,
+          19: 2.093, 20: 2.086, 25: 2.060, 30: 2.042, 40: 2.021, 60: 2.000}
+
+
+def _ci95(x):
+    """Half-width of the two-sided 95% Student-t interval for the mean."""
+    x = np.asarray(x, float)
+    n = len(x)
+    if n < 2:
+        return 0.0
+    df = n - 1
+    tq = T_CRIT.get(df) or T_CRIT[min(T_CRIT, key=lambda k: abs(k - df))]
+    return float(tq * _sem(x))
+
+
+def _stat(x):
+    x = np.asarray(x, float)
+    return dict(mean=float(x.mean()), sd=float(x.std(ddof=1)) if len(x) > 1
+                else 0.0, sem=_sem(x), ci95=_ci95(x), n=int(len(x)))
+
+
+def _schedules():
+    return ["code", "exact"]
+
+
+# ---- R5: Exp. 1 / Table 1 with more replicates, under both bonus schedules
+def exp_fixedpoint_v5(quick, full=False):
+    T = 4_000 if quick else 20_000
+    seeds = 3 if quick else REVIEW_SEEDS
+    Ns = [1, 4] if quick else [1, 4, 8, 16]
+    grid = [0.15] if quick else [0.15, 0.18]
+    out = dict(T=T, seeds=seeds)
+    for sched in _schedules():
+        out[sched] = {}
+        for cb in grid:
+            TI, _, _ = picard(cb, n_mc=200_000)
+            pic = float(np.linalg.norm(TI - TH_STAR))
+            per_N = {}
+            for N in Ns:
+                key = f"{sched}_cb{cb}_N{N}_S{seeds}_T{T}"
+                rec = ckpt_load("fixedpoint_v5", key)
+                if rec is None:
+                    r = run_anytime([cb] * N, N, T, seeds, 61, agg="mean",
+                                    theta_inf=TI, schedule=sched)
+                    TH0 = np.array(r.pop("_TH0"))
+                    d_star = np.linalg.norm(TH0 - TH_STAR[None], axis=(1, 2))
+                    d_inf = np.linalg.norm(TH0 - TI[None], axis=(1, 2))
+                    rec = dict(d_star=_stat(d_star), d_inf=_stat(d_inf),
+                               reg=_stat(r["reg"]), alpha_T=r["alpha_T"])
+                    ckpt_save("fixedpoint_v5", key, rec)
+                per_N[N] = rec
+                log(f"  fixedpoint_v5 {sched} cb={cb} N={N}: "
+                    f"d*={rec['d_star']['mean']:.3f} (Picard {pic:.3f}) "
+                    f"d_inf={rec['d_inf']['mean']:.4f}"
+                    f"+-{rec['d_inf']['ci95']:.4f} (95%)")
+            out[sched][str(cb)] = dict(picard=pic, per_N=per_N)
+    return out
+
+
+# ---- R6: Exp. 3 with the realised bonus gaps, under both bonus schedules
+def exp_collapse_bonus(quick, full=False, gamma_dec=0.01, Delta_dec=0.01):
+    cb = 0.15
+    T = 3_000 if quick else 15_000
+    seeds = 3 if quick else REVIEW_SEEDS
+    Ns = [2, 8] if quick else [2, 4, 8, 16, 32]
+    TI, _, _ = picard(cb, n_mc=200_000)
+    out = dict(T=T, seeds=seeds, gamma=gamma_dec, Delta=Delta_dec,
+               gamma_over_6=gamma_dec / 6, gamma_over_3=gamma_dec / 3)
+    for sched in _schedules():
+        per_N = {}
+        for N in Ns:
+            key = f"{sched}_N{N}_S{seeds}_T{T}"
+            rec = ckpt_load("collapse_bonus", key)
+            if rec is None:
+                r = run_anytime([cb] * N, N, T, seeds, 71, agg="mean",
+                                theta_inf=TI, gamma_dec=gamma_dec,
+                                Delta_dec=Delta_dec, schedule=sched,
+                                record_every=max(50, T // 60))
+                TH0 = np.array(r.pop("_TH0"))
+                ra = {k: np.array([np.nan if v is None else v for v in vs])
+                      for k, vs in r["rv_all"].items()}
+                n = np.maximum(ra["n"], 1.0)
+                tr = r["rv_traj"]
+                # last five recording windows, pooled over seeds
+                tail = slice(-5, None)
+                ntail = max(sum(tr["n"][tail]), 1.0)
+                rec = dict(
+                    t_behav=r.get("t_behav"),
+                    behav_frac_final=float(np.mean(r["traj_behav"][-5:])),
+                    behav_censored=bool(r.get("t_behav") is None),
+                    region_rounds=_stat(ra["n"]),
+                    # whole-run, per-seed averages over region rounds
+                    bgap_mean=_stat(ra["bgap_sum"] / n),
+                    sgap_mean=_stat(ra["sgap_sum"] / n),
+                    tot_mean=_stat(ra["tot_sum"] / n),
+                    eerr_mean=_stat(ra["eerr_sum"] / n),
+                    frac_bonus_cond=_stat(ra["bgap_ok"] / n),
+                    frac_est_cond=_stat(ra["eerr_ok"] / n),
+                    frac_both_cond=_stat(ra["both_ok"] / n),
+                    frac_tot_pos=_stat(ra["tot_pos"] / n),
+                    bgap_max=float(np.nanmax(ra["bgap_max"])),
+                    # same quantities over the last five windows only
+                    tail=dict(
+                        n=float(ntail),
+                        bgap_mean=sum(tr["bgap_sum"][tail]) / ntail,
+                        sgap_mean=sum(tr["sgap_sum"][tail]) / ntail,
+                        eerr_mean=sum(tr["eerr_sum"][tail]) / ntail,
+                        frac_bonus_cond=sum(tr["bgap_ok"][tail]) / ntail,
+                        frac_est_cond=sum(tr["eerr_ok"][tail]) / ntail,
+                        frac_tot_pos=sum(tr["tot_pos"][tail]) / ntail),
+                    traj_t=r["traj_t"], traj_behav=r["traj_behav"],
+                    traj_bgap=[s / max(c, 1.0) for s, c in
+                               zip(tr["bgap_sum"], tr["n"])],
+                    traj_eerr=[s / max(c, 1.0) for s, c in
+                               zip(tr["eerr_sum"], tr["n"])],
+                    traj_tot_pos=[s / max(c, 1.0) for s, c in
+                                  zip(tr["tot_pos"], tr["n"])],
+                    err_T=_stat(np.linalg.norm(TH0 - TI[None], axis=(1, 2))),
+                    bonus_bound_T=r["bonus_T"], alpha_T=r["alpha_T"])
+                ckpt_save("collapse_bonus", key, rec)
+            per_N[N] = rec
+            log(f"  collapse_bonus {sched} N={N}: frac={rec['behav_frac_final']:.3f} "
+                f"t_behav={rec['t_behav']} bgap={rec['bgap_mean']['mean']:.4f} "
+                f"(gamma/6={gamma_dec / 6:.4f}) eerr={rec['eerr_mean']['mean']:.4f} "
+                f"tot>0={rec['frac_tot_pos']['mean']:.3f}")
+        out[sched] = per_N
+    return out
+
+
+# ---- R7: epoch procedure with a known, non-oracle domain (Definition 6)
+def exp_epoch_known(quick, full=False):
+    cb, gamma = 0.15, 0.05
+    TI, _, _ = picard(cb, n_mc=200_000)
+    thr = gamma / 8.0
+    Ns = [1, 4] if quick else [1, 2, 4, 8, 16]
+    seeds = 2 if quick else EPOCH_SEEDS
+    m0 = 512 if quick else 2048
+    domains = ["pilot", "none", "oracle"]
+    out = dict(c_beta=cb, threshold=thr, m0=m0, seeds=seeds, R_K=0.5,
+               pi0="uniform")
+    for dom in domains:
+        per_N = {}
+        for N in Ns:
+            t1 = int(np.ceil(m0 / N))
+            runs = []
+            for s in range(seeds):
+                key = f"{dom}_N{N}_s{s}_m{m0}"
+                rec = ckpt_load("epoch_known", key)
+                if rec is None:
+                    Tst, k, hist, info = run_epoch_def6(
+                        cb, N, t1, TI, thr, seed=500 + s, domain=dom,
+                        R_K=0.5, max_epochs=14)
+                    rec = dict(T_star=Tst, k_star=k, hist=hist, **info)
+                    ckpt_save("epoch_known", key, rec)
+                runs.append(rec)
+                log(f"  epoch_known {dom} N={N} seed={s}: T*={rec['T_star']} "
+                    f"k*={rec['k_star']} in_K={rec['theta_inf_in_K']}")
+            Ts = [r["T_star"] for r in runs]
+            ok = [x for x in Ts if x]
+            per_N[N] = dict(
+                t1=t1, T_star=Ts, k_star=[r["k_star"] for r in runs],
+                median=float(np.median(ok)) if ok else None,
+                censored=int(sum(1 for x in Ts if not x)),
+                theta_inf_in_K=float(np.mean([r["theta_inf_in_K"]
+                                              for r in runs])),
+                proj_active_runs=int(sum(1 for r in runs
+                                         if r.get("proj_active_epochs"))),
+                final_err=_stat([r["hist"][-1] for r in runs]))
+        med = {n: v["median"] for n, v in per_N.items() if v["median"]}
+        slope = (float(np.polyfit(np.log(list(med)),
+                                  np.log(list(med.values())), 1)[0])
+                 if len(med) >= 2 else None)
+        out[dom] = dict(per_N=per_N, slope=slope)
+    return out
+
+
+REVIEW = ("fixedpoint_v5", "collapse_bonus", "epoch_known")
+
+
+def write_review_report(summary):
+    """results/review_report.md: the numbers the paper revision needs."""
+    L = ["# Review experiments (v5)", ""]
+    fp = summary.get("fixedpoint_v5")
+    if fp:
+        L += [f"## R5: Table 1 with {fp['seeds']} replicates, T={fp['T']}", "",
+              "| schedule | c_beta | Picard | N | d(theta*) | d(theta_inf) | "
+              "95% CI half-width |", "|---|---|---|---|---|---|---|"]
+        for sched in _schedules():
+            for cb, v in fp.get(sched, {}).items():
+                for N, r in v["per_N"].items():
+                    L.append(f"| {sched} | {cb} | {v['picard']:.3f} | {N} | "
+                             f"{r['d_star']['mean']:.3f} | "
+                             f"{r['d_inf']['mean']:.4f} | "
+                             f"{r['d_inf']['ci95']:.4f} |")
+        L.append("")
+    cbn = summary.get("collapse_bonus")
+    if cbn:
+        L += [f"## R6: Exp. 3 bonus gaps ({cbn['seeds']} replicates, "
+              f"T={cbn['T']}, gamma/6={cbn['gamma_over_6']:.4f}, "
+              f"gamma/3={cbn['gamma_over_3']:.4f})", "",
+              "| schedule | N | behav. frac | t_behav | mean bonus gap | "
+              "max bonus gap | mean est. error bound | frac bonus cond | "
+              "frac est cond | frac realised adv > 0 |",
+              "|---|---|---|---|---|---|---|---|---|---|"]
+        for sched in _schedules():
+            for N, r in cbn.get(sched, {}).items():
+                L.append(f"| {sched} | {N} | {r['behav_frac_final']:.3f} | "
+                         f"{r['t_behav']} | {r['bgap_mean']['mean']:.4f} | "
+                         f"{r['bgap_max']:.4f} | {r['eerr_mean']['mean']:.4f} | "
+                         f"{r['frac_bonus_cond']['mean']:.3f} | "
+                         f"{r['frac_est_cond']['mean']:.3f} | "
+                         f"{r['frac_tot_pos']['mean']:.3f} |")
+        L.append("")
+    ek = summary.get("epoch_known")
+    if ek:
+        L += [f"## R7: epoch procedure, Definition 6 ({ek['seeds']} "
+              f"replicates, threshold {ek['threshold']:.5f})", "",
+              "| domain | N | t1 | median T* | censored | theta_inf in K | "
+              "runs where projection binds | slope |",
+              "|---|---|---|---|---|---|---|---|"]
+        for dom in ("pilot", "none", "oracle"):
+            if dom not in ek:
+                continue
+            for N, r in ek[dom]["per_N"].items():
+                L.append(f"| {dom} | {N} | {r['t1']} | {r['median']} | "
+                         f"{r['censored']} | {r['theta_inf_in_K']:.2f} | "
+                         f"{r['proj_active_runs']} | {ek[dom]['slope']} |")
+        L.append("")
+    if len(L) > 2:
+        with open(_p("results", "review_report.md"), "w") as f:
+            f.write("\n".join(L))
+        log(f"  review report -> {_p('results', 'review_report.md')}")
+
+
 DRIVERS = dict(certify=exp_certify, epoch=exp_epoch, certified=exp_certified,
                baselines=exp_baselines, gate_exponent=exp_gate_exponent,
                mistakes=exp_mistakes,
                # ports of the original Exps. 1-7 onto this generator
                fixedpoint=exp_fixedpoint, collapse=exp_collapse,
-               gap=exp_gap, prop=exp_prop, gate_onset=exp_gate_onset)
+               gap=exp_gap, prop=exp_prop, gate_onset=exp_gate_onset,
+               fixedpoint_v5=exp_fixedpoint_v5,
+               collapse_bonus=exp_collapse_bonus,
+               epoch_known=exp_epoch_known)
 
 # Diagnostics: runnable on demand via --only, but not part of a default or
 # --paper run, because they are not reported results in the paper.
 DIAGNOSTIC = ("gate_exponent",)
-DEFAULT_DRIVERS = [n for n in DRIVERS if n not in DIAGNOSTIC]
+DEFAULT_DRIVERS = [n for n in DRIVERS
+                   if n not in DIAGNOSTIC and n not in REVIEW]
 
 
 # ===================================================================== FIGURES
@@ -1380,7 +1800,7 @@ def make_figures(summary):
 
 # ======================================================================= MAIN
 def main():
-    global OUTDIR
+    global OUTDIR, REVIEW_SEEDS, EPOCH_SEEDS
     ap = argparse.ArgumentParser()
     ap.add_argument("--paper", action="store_true", help="Sec. recon scale")
     ap.add_argument("--full", action="store_true",
@@ -1391,12 +1811,24 @@ def main():
     ap.add_argument("--force", action="store_true",
                     help="ignore existing results/ and checkpoints/")
     ap.add_argument("--no-figures", action="store_true")
+    ap.add_argument("--review", action="store_true",
+                    help="run only the review experiments " + ",".join(REVIEW))
+    ap.add_argument("--seeds", type=int, default=None,
+                    help=f"replicates for review anytime runs "
+                         f"(default {REVIEW_SEEDS})")
+    ap.add_argument("--epoch-seeds", type=int, default=None,
+                    help=f"replicates for review epoch runs "
+                         f"(default {EPOCH_SEEDS})")
     a = ap.parse_args()
+    if a.seeds:
+        REVIEW_SEEDS = a.seeds
+    if a.epoch_seeds:
+        EPOCH_SEEDS = a.epoch_seeds
     OUTDIR = a.outdir
     quick = not (a.paper or a.full)
     full = a.full
     names = ([n.strip() for n in a.only.split(",") if n.strip()]
-             or list(DEFAULT_DRIVERS))
+             or (list(REVIEW) if a.review else list(DEFAULT_DRIVERS)))
     unknown = [n for n in names if n not in DRIVERS]
     if unknown:
         sys.exit(f"unknown experiments: {unknown}; choices {list(DRIVERS)}")
@@ -1436,6 +1868,7 @@ def main():
     merged.update(summary)
     _atomic_json(sp, merged)
     summary = merged
+    write_review_report(summary)
     if not a.no_figures:
         make_figures(summary)                 # quick diagnostics
         try:                                  # publication figures (C7)

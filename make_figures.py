@@ -578,8 +578,11 @@ def _logN(ax, Ns):
 
 
 def fig_collapse_bonus(S, outdir):
-    """R6 -- realised bonus gaps on the decoupling region against gamma/6,
-    and how often the realised optimistic advantage favours the bad action."""
+    """R6 -- on decoupling-region rounds: (a) the realised bonus help to
+    near-optimal actions against the estimated score advantage of the
+    fixed-point action and gamma/6, (b) how often the optimistic score
+    favours the fixed-point (bad) action, over the whole run and late."""
+    from matplotlib.lines import Line2D
     fig, axes = plt.subplots(1, 2, figsize=(6.7, 2.95))
     Ns = None
     for sched in ("code", "exact"):
@@ -588,26 +591,57 @@ def fig_collapse_bonus(S, outdir):
             continue
         Ns = sorted(int(n) for n in per)
         g = lambda n: per[str(n)] if str(n) in per else per[n]
-        m = [g(n)["bgap_mean"]["mean"] for n in Ns]
-        e = [g(n)["bgap_mean"]["ci95"] for n in Ns]
-        axes[0].errorbar(Ns, m, yerr=e, capsize=2, lw=1.4,
-                         label=SCHED_L[sched], **_marker_kw(SCHED_C[sched]))
-        fr = [g(n)["frac_tot_pos"]["mean"] for n in Ns]
-        fe = [g(n)["frac_tot_pos"]["ci95"] for n in Ns]
-        axes[1].errorbar(Ns, fr, yerr=fe, capsize=2, lw=1.4,
-                         label=SCHED_L[sched], **_marker_kw(SCHED_C[sched]))
+        c = SCHED_C[sched]
+        axes[0].errorbar(Ns, [g(n)["bgap_mean"]["mean"] for n in Ns],
+                         yerr=[g(n)["bgap_mean"]["ci95"] for n in Ns],
+                         capsize=2, lw=1.4, **_marker_kw(c))
+        axes[1].errorbar(Ns, [g(n)["frac_tot_pos"]["mean"] for n in Ns],
+                         yerr=[g(n)["frac_tot_pos"]["ci95"] for n in Ns],
+                         capsize=2, lw=1.4, **_marker_kw(c))
+        axes[1].plot(Ns, [g(n)["tail"]["frac_tot_pos"] for n in Ns],
+                     ls=(0, (4, 2)), lw=1.2, marker="o", color=c,
+                     markerfacecolor="white", markeredgecolor=c)
     if Ns is None:
         plt.close(fig)
         return
-    axes[0].axhline(S["gamma_over_6"], ls=(0, (4, 3)), lw=1.5, color=MUTE,
-                    label=r"$\gamma/6$")
+    per = S.get("exact") or S.get("code")
+    g = lambda n: per[str(n)] if str(n) in per else per[n]
+    axes[0].errorbar(Ns, [g(n)["sgap_mean"]["mean"] for n in Ns],
+                     yerr=[g(n)["sgap_mean"]["ci95"] for n in Ns],
+                     capsize=2, lw=1.4, ls=(0, (4, 2)), marker="s",
+                     color=GRAPHITE, markerfacecolor=GRAPHITE,
+                     markeredgecolor="white")
+    axes[0].axhline(S["gamma_over_6"], ls=(0, (1, 2)), lw=1.5, color=MUTE)
     axes[0].set_yscale("log")
-    axes[0].set_ylabel("mean bonus gap on region")
+    yt = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05]
+    axes[0].set_yticks(yt)
+    axes[0].set_yticklabels([f"{v:g}" for v in yt])
+    axes[0].yaxis.set_minor_formatter(NullFormatter())
+    axes[0].set_ylim(0.0012, 0.07)
+    axes[0].set_ylabel("mean advantage on region")
     axes[0].set_title("(a)", fontsize=11.5, loc="left")
-    axes[0].legend(loc="best", fontsize=8.2)
-    axes[1].set_ylabel("frac. optimistic adv. to bad action")
+    h0 = [Line2D([], [], **_marker_kw(GRAPHITE), ls=(0, (4, 2)),
+                 label=r"score adv. of $\tilde a$"),
+          Line2D([], [], **_marker_kw(SCHED_C["exact"]),
+                 label="bonus help, analysed"),
+          Line2D([], [], **_marker_kw(SCHED_C["code"]),
+                 label="bonus help, wider"),
+          Line2D([], [], ls=(0, (1, 2)), lw=1.5, color=MUTE,
+                 label=r"$\gamma/6$")]
+    h0[0].set_marker("s")
+    axes[0].legend(handles=h0, loc="lower right", fontsize=7.8,
+                   handlelength=3.2, bbox_to_anchor=(1.0, 0.08))
+    axes[1].set_ylabel("frac. favouring bad action")
     axes[1].set_ylim(0, 1.02)
     axes[1].set_title("(b)", fontsize=11.5, loc="left")
+    h1 = [Line2D([], [], color=INK, lw=1.4, marker="o",
+                 markerfacecolor=INK, markeredgecolor="white",
+                 label="whole run"),
+          Line2D([], [], color=INK, lw=1.2, ls=(0, (4, 2)), marker="o",
+                 markerfacecolor="white", markeredgecolor=INK,
+                 label="last five windows")]
+    axes[1].legend(handles=h1, loc="lower right", fontsize=7.8,
+                   handlelength=3.2)
     for ax in axes:
         _logN(ax, Ns)
         finish(ax)
